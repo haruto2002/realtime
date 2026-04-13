@@ -1,3 +1,4 @@
+import queue
 import subprocess
 import threading
 import time
@@ -6,8 +7,6 @@ from typing import Optional, Tuple
 
 import numpy as np
 
-from detector import Detector
-
 
 @dataclass
 class ReaderStats:
@@ -15,18 +14,7 @@ class ReaderStats:
     read_frames: int = 0
     read_fail: int = 0
     restarts: int = 0
-
-    det_latest_frame_id: int = 0
-    det_frames: int = 0
-
-    skipped_frames: int = 0
-
     latency: float = 0.0
-    det_time: float = 0.0
-    draw_time: float = 0.0
-    display_time: float = 0.0
-
-    fps: float = 0.0
 
 
 class FFmpegRTSPReader:
@@ -36,15 +24,17 @@ class FFmpegRTSPReader:
         size: Tuple[int, int],
         transport: str = "udp",
         ffmpeg_path: str = "ffmpeg",
-        log_every_sec: float = 1.0,
         reconnect_backoff_sec: float = 0.5,
+        output_fps: Optional[float] = None,
+        frame_queue_maxsize: int = 0,
     ):
         self.rtsp_url = rtsp_url
         self.w, self.h = size
         self.transport = transport
         self.ffmpeg_path = ffmpeg_path
-        self.log_every_sec = log_every_sec
         self.reconnect_backoff_sec = reconnect_backoff_sec
+        self.output_fps = output_fps
+        self.frame_queue_maxsize = frame_queue_maxsize
 
         self.frame_bytes = self.w * self.h * 3  # bgr24
 
@@ -59,15 +49,10 @@ class FFmpegRTSPReader:
         self._latest_ts: float = 0.0
         self._latest_seq: int = 0
 
-        # detection（最新結果1つ）
-        self._det_lock = threading.Lock()
-        self._frame: np.ndarray = np.zeros((self.w, self.h, 3), np.uint8)
-        self._input_frame_read_ts: float = 0.0
-        self._det_result: Optional[np.ndarray] = None
-        self._det_seq: int = 0
-        self._det_time: float = 0.0
-        self._det_ts: float = 0.0
-        self._det_thread: Optional[threading.Thread] = None
+        # 順次取得（フレームを間引かずに渡す。キューが満杯のときは読み取りスレッドがブロック）
+        self._frame_queue: Optional[queue.Queue[Tuple[np.ndarray, int, float]]] = None
+        if frame_queue_maxsize > 0:
+            self._frame_queue = queue.Queue(maxsize=frame_queue_maxsize)
 
         self.stats = ReaderStats()
 
@@ -84,73 +69,29 @@ class FFmpegRTSPReader:
         self._stop.set()
         self._terminate_ffmpeg()
 
-    def get_latest(self) -> Tuple[Optional[np.ndarray], int, float]:
-        with self._lock:
-            if self._latest_frame is None:
-                return None, self._latest_seq, self._latest_ts
-            return self._latest_frame.copy(), self._latest_seq, self._latest_ts
+    def get_next(
+        self, block: bool = True, timeout: Optional[float] = None
+    ) -> Tuple[Optional[np.ndarray], int, float]:
+        """順番どおりに1フレーム取得。frame_queue_maxsize>0 が必要。
 
-    # ★ Detector を組み込むためのAPI
-    def start_detector(
-        self,
-        detector: Detector,
-        infer_every_n: int = 1,
-    ) -> None:
-        if self._det_thread and self._det_thread.is_alive():
-            return
-
-        def _loop():
-            last_seq = 0
-            while not self._stop.is_set():
-                frame, seq, frame_read_ts = self.get_latest()
-                if frame is None or seq == last_seq:
-                    time.sleep(0.002)
-                    continue
-
-                # 推論頻度（任意）
-                if infer_every_n > 1 and (seq % infer_every_n != 0):
-                    last_seq = seq
-                    continue
-
-                last_seq = seq
-
-                t0 = time.perf_counter()
-                res = detector.infer(frame)
-                t1 = time.perf_counter()
-                frame = detector.draw(frame, res)
-                t2 = time.perf_counter()
-
-                with self._det_lock:
-                    self._frame = frame
-                    self._input_frame_read_ts = frame_read_ts
-                    self._det_result = res
-                    self._det_seq = seq
-                    self._det_time = t1 - t0
-                    self._det_ts = time.perf_counter()
-
-                    self.stats.det_latest_frame_id = self._det_seq
-                    self.stats.det_frames += 1
-                    self.stats.det_time = self._det_time
-                    self.stats.draw_time = t2 - t1
-
-        self._det_thread = threading.Thread(target=_loop, daemon=True)
-        self._det_thread.start()
-
-    def get_latest_detection(
-        self,
-    ) -> Tuple[Optional[np.ndarray], float, Optional[np.ndarray], int, float]:
-        with self._det_lock:
-            return (
-                self._frame,
-                self._input_frame_read_ts,
-                self._det_result,
-                self._det_seq,
-                self._det_time,
+        block=True でキューが空のとき待つ。消費が遅いと読み取り側がブロックし、フレームを落とさない。
+        """
+        if self._frame_queue is None:
+            raise RuntimeError(
+                "get_next を使うには frame_queue_maxsize を 1 以上にしてください"
             )
+        try:
+            frame, seq, ts = self._frame_queue.get(block=block, timeout=timeout)
+            return frame, seq, ts
+        except queue.Empty:
+            return None, self._latest_seq, self._latest_ts
 
     # -------- internal --------
 
     def _build_ffmpeg_cmd(self) -> list:
+        vf = f"scale={self.w}:{self.h}"
+        if self.output_fps is not None and self.output_fps > 0:
+            vf = f"{vf},fps={self.output_fps}"
         return [
             self.ffmpeg_path,
             "-hide_banner",
@@ -174,7 +115,7 @@ class FFmpegRTSPReader:
             "-pix_fmt",
             "bgr24",
             "-vf",
-            f"scale={self.w}:{self.h}",
+            vf,
             "pipe:1",
         ]
 
@@ -239,6 +180,16 @@ class FFmpegRTSPReader:
                 self._latest_seq += 1
                 self.stats.read_latest_frame_id = self._latest_seq
                 self.stats.read_frames += 1
+                seq = self._latest_seq
+
+            if self._frame_queue is not None:
+                item = (frame.copy(), seq, now)
+                while not self._stop.is_set():
+                    try:
+                        self._frame_queue.put(item, timeout=0.2)
+                        break
+                    except queue.Full:
+                        continue
 
         self._terminate_ffmpeg()
 
@@ -250,17 +201,3 @@ class FFmpegRTSPReader:
                     print("[FFMPEG-ERR]", err)
         except Exception:
             pass
-
-    def log_status(self) -> None:
-        s = self.stats
-        print(
-            f"[STAT]"
-            f"shown={s.det_latest_frame_id} (read={s.read_latest_frame_id}) "
-            f"process_num={s.det_frames} (read={s.read_frames}) "
-            f"fps={s.fps:.2f} "
-            f"latency={s.latency * 1000:.2f}ms "
-            f"det={s.det_time * 1000:.2f}ms draw={s.draw_time * 1000:.2f}ms "
-            f"display={s.display_time * 1000:.2f}ms "
-            f"skipped={s.skipped_frames} "
-            f"read_fail={s.read_fail} restarts={s.restarts} "
-        )

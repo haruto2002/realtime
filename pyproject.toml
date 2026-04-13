@@ -1,17 +1,19 @@
 [project]
 name = "realtime"
-authors = [{name = "Haruto Nakayama", email = "nakayama.haruto@aist.go.jp"}]
-readme = "README.md"
-license = {file = "LICENSE"}
-description = "Realtime-Processing-System-for-Crowd-Analysis"
 version = "2026.04"
+description = "Realtime-Processing-System-for-Crowd-Analysis"
+readme = "README.md"
 requires-python = ">=3.12.8,<3.13"
+authors = [
+  { name = "Haruto Nakayama", email = "nakayama.haruto@aist.go.jp" }
+]
+license = { file = "LICENSE" }
 
 dependencies = [
   "matplotlib",
   "lightning",
   "numpy",
-  "pyyaml",
+  "PyYAML",
   "torch",
   "torchaudio",
   "torchmetrics",
@@ -24,31 +26,18 @@ dependencies = [
   "timm",
   "pandas",
   "websockets",
-  "asyncio",
   "onvif-zeep",
+  "opencv-python",
+  "scipy",
+  "sympy",
+  "cython",
+  "lap",
+  "faster-coco-eval>=1.6.7",
+  "tensorboard",
+  "calflops",
+  "transformers",
+  "cython_bbox"
 ]
 
-
-# -------------------------
-# pixi: conda 側（OS/ネイティブ/ツール）
-# -------------------------
-[tool.pixi.workspace]
-channels = ["conda-forge"]
-platforms = ["linux-64"]
-
-[tool.pixi.dependencies]
-python = ">=3.12.8,<3.13"
-ffmpeg = "*"
-
-# ここは conda の方が安定しやすい（ネイティブ依存が絡む）
-scipy = "*"
-cython = "*"
-opencv = "*"        # opencv-python (pip) ではなく conda の opencv を推奨
-lap = "*"
-sympy = "*"
-
-# -------------------------
-# pixi: PyPI 側（pipで入れるもの）
-# -------------------------
-[tool.pixi.pypi-dependencies]
-nvidia-dali-cuda120 = { version = "*", index = "https://pypi.nvidia.com" }
+[tool.uv]
+package = false

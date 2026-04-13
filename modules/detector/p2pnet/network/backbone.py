@@ -2,15 +2,16 @@
 """
 Backbone modules.
 """
+
 from torch import nn
 
-import p2pnet.network.vgg_ as models
+import modules.detector.p2pnet.network.vgg_ as models
 
 
 class BackboneBase_VGG(nn.Module):
     def __init__(
         self,
-        backbone: nn.Module,
+        backbone,
         num_channels: int,
         name: str,
         return_interm_layers: bool,
@@ -58,10 +59,10 @@ class BackboneBase_VGG(nn.Module):
 class Backbone_VGG(BackboneBase_VGG):
     """ResNet backbone with frozen BatchNorm."""
 
-    def __init__(self, name: str, return_interm_layers: bool):
+    def __init__(self, name: str, return_interm_layers: bool, pretrained: bool):
         if name == "vgg16_bn":
-            backbone = models.vgg16_bn(pretrained=True)
+            backbone = models.vgg16_bn(pretrained=pretrained)
         elif name == "vgg16":
-            backbone = models.vgg16(pretrained=True)
+            backbone = models.vgg16(pretrained=pretrained)
         num_channels = 256
         super().__init__(backbone, num_channels, name, return_interm_layers)

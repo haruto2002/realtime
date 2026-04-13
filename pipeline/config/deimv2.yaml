@@ -1,0 +1,6 @@
+_target_: pipeline.detector.deimv2.DEIMv2Detector
+
+cfg_path: modules/detector/DEIMv2/configs/deimv2/deimv2_dinov3_x_coco.yml
+weight_path: weights/deimv2/deimv2_dinov3_x_coco.pth
+device: cpu
+threshold: 0.3

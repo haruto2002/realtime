@@ -3,8 +3,8 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-
 from detector import Detector
+
 from reader import FFmpegRTSPReader
 
 HOST = "member"
@@ -24,10 +24,13 @@ def main():
         reconnect_backoff_sec=0.5,
     )
     reader.start()
+    print("Reader Started")
 
-    cfg_path = Path("acca/conf/rt_conf/p2pnet.yaml")
+    # cfg_path = Path("pipeline/config/p2pnet.yaml")
+    cfg_path = Path("pipeline/config/deimv2.yaml")
     detector = Detector(cfg_path)
     reader.start_detector(detector, infer_every_n=1)
+    print("Detector Started")
 
     # GUIウォームアップ
     cv2.imshow("frame", np.zeros((H, W, 3), np.uint8))
@@ -36,7 +39,7 @@ def main():
     last_shown_seq = 0
 
     n = 0
-    start_iter = 1000
+    start_iter = 500
 
     try:
         while True:
@@ -67,7 +70,7 @@ def main():
                 now = time.perf_counter()
                 elapsed = now - fps_time
                 fps = fps_counter / elapsed
-                print(fps, "FPS")
+                reader.stats.fps = fps
                 cv2.putText(
                     frame,
                     f"{fps}FPS",
@@ -83,12 +86,12 @@ def main():
                 break
 
             end_ts = time.perf_counter()
-            process_time = end_ts - read_ts
+            latency = end_ts - read_ts
             display_time = end_ts - start_ts
-            reader.stats.process_time = process_time
+            reader.stats.latency = latency
             reader.stats.display_time = display_time
 
-            # reader.log_status()
+            reader.log_status()
     finally:
         reader.stop()
         cv2.destroyAllWindows()
@@ -96,3 +99,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    # print(RTSP_URL)
