@@ -15,6 +15,8 @@ class ReaderStats:
     read_fail: int = 0
     restarts: int = 0
     latency: float = 0.0
+    queue_full_flushes: int = 0
+    frames_dropped_on_queue_flush: int = 0
 
 
 class FFmpegRTSPReader:
@@ -27,7 +29,11 @@ class FFmpegRTSPReader:
         reconnect_backoff_sec: float = 0.5,
         output_fps: Optional[float] = None,
         frame_queue_maxsize: int = 0,
+        flush_on_queue_full: bool = True,
     ):
+        """flush_on_queue_full: キュー満杯時に中身を捨ててから現在フレームを1枚だけ入れる。
+        False のときは従来どおり put が空くまでブロック（バックプレッシャー）。
+        """
         self.rtsp_url = rtsp_url
         self.w, self.h = size
         self.transport = transport
@@ -49,10 +55,11 @@ class FFmpegRTSPReader:
         self._latest_ts: float = 0.0
         self._latest_seq: int = 0
 
-        # 順次取得（フレームを間引かずに渡す。キューが満杯のときは読み取りスレッドがブロック）
+        # 順次取得。満杯のときはキューを空にしてから最新1枚だけ入れ直す（バックプレッシャーで詰まらない）
         self._frame_queue: Optional[queue.Queue[Tuple[np.ndarray, int, float]]] = None
         if frame_queue_maxsize > 0:
             self._frame_queue = queue.Queue(maxsize=frame_queue_maxsize)
+        self.flush_on_queue_full = flush_on_queue_full
 
         self.stats = ReaderStats()
 
@@ -69,12 +76,19 @@ class FFmpegRTSPReader:
         self._stop.set()
         self._terminate_ffmpeg()
 
+    def get_latest(self) -> Tuple[Optional[np.ndarray], int, float]:
+        with self._lock:
+            if self._latest_frame is None:
+                return None, self._latest_seq, self._latest_ts
+            return self._latest_frame.copy(), self._latest_seq, self._latest_ts
+
     def get_next(
         self, block: bool = True, timeout: Optional[float] = None
     ) -> Tuple[Optional[np.ndarray], int, float]:
         """順番どおりに1フレーム取得。frame_queue_maxsize>0 が必要。
 
-        block=True でキューが空のとき待つ。消費が遅いと読み取り側がブロックし、フレームを落とさない。
+        block=True でキューが空のとき待つ。消費が極端に遅いと読み取り側がキューをフラッシュするため、
+        seq に飛び番が出ることがある。
         """
         if self._frame_queue is None:
             raise RuntimeError(
@@ -84,9 +98,51 @@ class FFmpegRTSPReader:
             frame, seq, ts = self._frame_queue.get(block=block, timeout=timeout)
             return frame, seq, ts
         except queue.Empty:
-            return None, self._latest_seq, self._latest_ts
+            with self._lock:
+                seq, ts = self._latest_seq, self._latest_ts
+            return None, seq, ts
+
+    def drain_frame_queue(self) -> int:
+        """キューに溜まったフレームをすべて捨てる。get_latest から get_next へ切り替える前や、本処理開始直前に呼ぶ。
+
+        get_latest はキューを消費しないため、初期化中に古いフレームが最大 maxsize まで溜まる。
+        本処理の最初の get_next が「古い先頭」にならないよう、ここで空にする。
+        """
+        if self._frame_queue is None:
+            return 0
+        return self._flush_frame_queue()
+
+    def _flush_frame_queue(self) -> int:
+        """キューを空にし、取り除いた要素数を返す（スレッドセーフな Queue のみを触る）。"""
+        if self._frame_queue is None:
+            return 0
+        n = 0
+        while True:
+            try:
+                self._frame_queue.get_nowait()
+                n += 1
+            except queue.Empty:
+                break
+        return n
 
     # -------- internal --------
+
+    @staticmethod
+    def _read_exact(stream, n: int) -> bytes:
+        """パイプからちょうど n バイト読む（複数回の read にまたがる場合も連結）。
+
+        1回の read(n) は環境によって n 未満で返ることがある。欠けたまま reshape すると
+        フレーム境界がずれ、以降すべて矩形状の色破損に見えることがある。
+        """
+        parts: list[bytes] = []
+        remaining = n
+        while remaining > 0:
+            chunk = stream.read(remaining)
+            if not chunk:
+                break
+            parts.append(chunk)
+            remaining -= len(chunk)
+        return b"".join(parts)
 
     def _build_ffmpeg_cmd(self) -> list:
         vf = f"scale={self.w}:{self.h}"
@@ -161,11 +217,15 @@ class FFmpegRTSPReader:
                 continue
 
             try:
-                raw = proc.stdout.read(self.frame_bytes) if proc.stdout else b""
+                raw = (
+                    self._read_exact(proc.stdout, self.frame_bytes)
+                    if proc.stdout
+                    else b""
+                )
             except Exception:
                 raw = b""
 
-            if not raw or len(raw) < self.frame_bytes:
+            if len(raw) < self.frame_bytes:
                 self.stats.read_fail += 1
                 self._spawn_ffmpeg()
                 time.sleep(self.reconnect_backoff_sec)
@@ -184,12 +244,24 @@ class FFmpegRTSPReader:
 
             if self._frame_queue is not None:
                 item = (frame.copy(), seq, now)
-                while not self._stop.is_set():
-                    try:
-                        self._frame_queue.put(item, timeout=0.2)
-                        break
-                    except queue.Full:
-                        continue
+                try:
+                    self._frame_queue.put_nowait(item)
+                except queue.Full:
+                    if self.flush_on_queue_full:
+                        dropped = self._flush_frame_queue()
+                        self.stats.queue_full_flushes += 1
+                        self.stats.frames_dropped_on_queue_flush += dropped
+                        try:
+                            self._frame_queue.put_nowait(item)
+                        except queue.Full:
+                            self._frame_queue.put(item, block=True, timeout=1.0)
+                    else:
+                        while not self._stop.is_set():
+                            try:
+                                self._frame_queue.put(item, timeout=0.2)
+                                break
+                            except queue.Full:
+                                continue
 
         self._terminate_ffmpeg()
 

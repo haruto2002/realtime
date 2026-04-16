@@ -3,7 +3,6 @@ import time
 import cv2
 
 from components import Detector, Tracker
-from track_reader import FFmpegRTSPReader
 
 HOST = "member"
 IP = "192.168.0.10"
@@ -17,17 +16,8 @@ FPS_REPORT_EVERY_FRAMES = 10
 
 
 def main():
-    reader = FFmpegRTSPReader(
-        rtsp_url=RTSP_URL,
-        size=(W, H),
-        transport="udp",
-        output_fps=15,
-        frame_queue_maxsize=100,
-        reconnect_backoff_sec=0.5,
-        flush_on_queue_full=True,
-    )
-    reader.start()
-    print("Reader Started")
+    video_capture = cv2.VideoCapture(RTSP_URL)
+    print("Video Capture Started")
 
     # detector = Detector("pipeline/config/p2pnet.yaml")
     # print("Detector Started")
@@ -39,37 +29,18 @@ def main():
     tracker = Tracker("pipeline/config/bytetrack.yaml")
     print("Tracker Started")
 
-    warmup = False
-    if warmup:
-        # Reader: 最初のフレームまで待つ（FFmpeg/パイプの立ち上がり）
-        deadline = time.perf_counter() + 30.0
-        frame, seq, ts = None, 0, 0.0
-        while time.perf_counter() < deadline:
-            frame, seq, ts = reader.get_latest()
-            if frame is not None:
-                break
-            time.sleep(0.01)
-        if frame is None:
-            print("Reader is not ready (timeout)")
-            reader.stop()
-            return
+    for i in range(100):
+        ret, frame = video_capture.read()
         cv2.imshow("frame", frame)
-        cv2.waitKey(1)
-
-        # get_latest はキューを消費しない。初期化中に溜まった古いフレームを捨ててから get_next へ
-        drained = reader.drain_frame_queue()
-        if drained:
-            print(f"Drained {drained} buffered frame(s) before main loop")
+        if cv2.waitKey(1) & 0xFF == ord("q"):
+            break
 
     fps_window_start = time.perf_counter()
     fps_window_frames = 0
 
     while True:
-        frame, seq, ts = reader.get_next(timeout=0.2)
+        ret, frame = video_capture.read()
         t1 = time.perf_counter()
-        read_latency = t1 - ts
-        if frame is None:
-            continue
 
         dets = detector.infer(frame)
         t2 = time.perf_counter()
@@ -86,9 +57,8 @@ def main():
         draw_latency = t4 - t3
 
         print(
-            f"read_latency: {read_latency:.3f}s, det_latency: {det_latency:.3f}s, track_latency: {track_latency:.3f}s, draw_latency: {draw_latency:.3f}s"
+            f"det_latency: {det_latency:.3f}s, track_latency: {track_latency:.3f}s, draw_latency: {draw_latency:.3f}s"
         )
-        print(reader.stats)
 
         fps_window_frames += 1
         if fps_window_frames >= FPS_REPORT_EVERY_FRAMES:
@@ -100,7 +70,7 @@ def main():
             fps_window_start = time.perf_counter()
             fps_window_frames = 0
     cv2.destroyAllWindows()
-    reader.stop()
+    video_capture.release()
 
 
 if __name__ == "__main__":

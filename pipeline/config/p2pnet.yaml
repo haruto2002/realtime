@@ -4,4 +4,4 @@ cfg_path: modules/detector/p2pnet/conf/p2p.yaml
 weight_path: weights/p2pnet/cutout.pth
 device: cpu
 dtype: float16
-threshold: 0.5
+threshold: 0.1

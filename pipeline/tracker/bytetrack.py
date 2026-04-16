@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+import cv2
 import numpy as np
 
 from modules.tracker.bytetrack.byte_tracker import BYTETracker
@@ -30,3 +31,25 @@ class ByteTrackTracker:
         dets: [[left, top, right, bottom, score], ...]
         """
         return self.tracker.update(dets)
+
+    def draw(self, image, tracks):
+        line_thickness = 3
+        for i, track in enumerate(tracks):
+            # x1, y1, w, h = track.tlwh
+            # ntbox = tuple(map(int, (x1, y1, x1 + w, y1 + h)))
+            x1, y1, x2, y2 = track.tlbr
+            obj_id = track.track_id
+            color = self.get_color(abs(obj_id))
+            cv2.rectangle(
+                image,
+                (int(x1), int(y1)),
+                (int(x2), int(y2)),
+                color=color,
+                thickness=line_thickness,
+            )
+        return image
+
+    def get_color(self, idx):
+        idx = idx * 3
+        color = ((37 * idx) % 255, (17 * idx) % 255, (29 * idx) % 255)
+        return color

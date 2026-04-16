@@ -6,7 +6,7 @@ import numpy as np
 from components import Detector, Tracker
 
 
-def main():
+def main_bbox():
     path2video = "palace.mp4"
     detector = Detector("pipeline/config/deimv2.yaml")
     tracker = Tracker("pipeline/config/bytetrack.yaml")
@@ -48,5 +48,32 @@ def convert_to_tracker_inputs(dets):
     return dets
 
 
+def main_point():
+    path2video = "palace.mp4"
+    detector = Detector("pipeline/config/p2pnet.yaml")
+    tracker = Tracker("pipeline/config/point_bytetrack.yaml")
+    video_capture = cv2.VideoCapture(path2video)
+
+    fps = video_capture.get(cv2.CAP_PROP_FPS)
+    width = int(video_capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(video_capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    video_writer = cv2.VideoWriter(
+        "output.mp4", cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height)
+    )
+    while True:
+        print("frame", video_capture.get(cv2.CAP_PROP_POS_FRAMES))
+        ret, frame = video_capture.read()
+        if not ret:
+            break
+        dets = detector.infer(frame)
+        tracks = tracker.update(dets)
+        frame = tracker.point_draw(frame, tracks)
+        cv2.imshow("frame", frame)
+        if cv2.waitKey(1) & 0xFF == ord("q"):
+            break
+    video_capture.release()
+    video_writer.release()
+
+
 if __name__ == "__main__":
-    main()
+    main_point()
