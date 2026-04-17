@@ -18,6 +18,12 @@ class Detector:
     def infer(self, image: np.ndarray) -> np.ndarray:
         return self.detector.infer(image)
 
+    def infer_split(self, image: np.ndarray, center: int) -> np.ndarray:
+        images = [image[:, :center], image[:, center:]]
+        results = self.detector.infer_batch(images)
+        merged_results = self.detector.merge_results(results[0], results[1], center)
+        return merged_results
+
     def draw(self, image: np.ndarray, dets: np.ndarray) -> np.ndarray:
         return self.detector.display_result(image, dets)
 

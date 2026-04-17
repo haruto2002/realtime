@@ -248,6 +248,7 @@ class FFmpegRTSPReader:
                     self._frame_queue.put_nowait(item)
                 except queue.Full:
                     if self.flush_on_queue_full:
+                        print(f"Flush frame queue({self.stats.queue_full_flushes + 1})")
                         dropped = self._flush_frame_queue()
                         self.stats.queue_full_flushes += 1
                         self.stats.frames_dropped_on_queue_flush += dropped

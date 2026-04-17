@@ -29,51 +29,33 @@ def main():
     reader.start()
     print("Reader Started")
 
-    # detector = Detector("pipeline/config/p2pnet.yaml")
-    # print("Detector Started")
-    # tracker = Tracker("pipeline/config/point_bytetrack.yaml")
-    # print("Tracker Started")
+    path2det_cfg = "pipeline/config/deimv2.yaml"
+    path2track_cfg = "pipeline/config/bytetrack.yaml"
 
-    detector = Detector("pipeline/config/deimv2.yaml")
-    print("Detector Started")
-    tracker = Tracker("pipeline/config/bytetrack.yaml")
-    print("Tracker Started")
+    # path2det_cfg = "pipeline/config/p2pnet.yaml"
+    # path2track_cfg = "pipeline/config/point_bytetrack.yaml"
 
-    warmup = False
-    if warmup:
-        # Reader: 最初のフレームまで待つ（FFmpeg/パイプの立ち上がり）
-        deadline = time.perf_counter() + 30.0
-        frame, seq, ts = None, 0, 0.0
-        while time.perf_counter() < deadline:
-            frame, seq, ts = reader.get_latest()
-            if frame is not None:
-                break
-            time.sleep(0.01)
-        if frame is None:
-            print("Reader is not ready (timeout)")
-            reader.stop()
-            return
-        cv2.imshow("frame", frame)
-        cv2.waitKey(1)
-
-        # get_latest はキューを消費しない。初期化中に溜まった古いフレームを捨ててから get_next へ
-        drained = reader.drain_frame_queue()
-        if drained:
-            print(f"Drained {drained} buffered frame(s) before main loop")
+    detector = Detector(path2det_cfg)
+    print("Detector Setup Done")
+    tracker = Tracker(path2track_cfg)
+    print("Tracker Setup Done")
 
     fps_window_start = time.perf_counter()
     fps_window_frames = 0
-
     while True:
+        t0 = time.perf_counter()
         frame, seq, ts = reader.get_next(timeout=0.2)
         t1 = time.perf_counter()
-        read_latency = t1 - ts
+        read_latency = t1 - t0
+        read_wait_latency = t1 - ts
         if frame is None:
             continue
 
-        dets = detector.infer(frame)
+        # dets = detector.infer(frame)
+        dets = detector.infer_split(frame, 640)
         t2 = time.perf_counter()
         det_latency = t2 - t1
+
         tracks = tracker.update(tracker.convert_to_tracker_inputs(dets))
         t3 = time.perf_counter()
         track_latency = t3 - t2
@@ -83,20 +65,23 @@ def main():
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break
         t4 = time.perf_counter()
-        draw_latency = t4 - t3
+        display_latency = t4 - t3
+
+        total_latency = t4 - ts
+
+        p_time = t4 - t0
 
         print(
-            f"read_latency: {read_latency:.3f}s, det_latency: {det_latency:.3f}s, track_latency: {track_latency:.3f}s, draw_latency: {draw_latency:.3f}s"
+            f"latency: {int(total_latency * 1000)}ms -- frame_wait: {int(read_wait_latency * 1000)}ms, process: {int(p_time * 1000)}ms "
+            f"(read: {int(read_latency * 1000)}ms, det: {int(det_latency * 1000)}ms, track: {int(track_latency * 1000)}ms, display: {int(display_latency * 1000)}ms)"
         )
-        print(reader.stats)
+        # print(reader.stats)
 
         fps_window_frames += 1
         if fps_window_frames >= FPS_REPORT_EVERY_FRAMES:
             elapsed = time.perf_counter() - fps_window_start
             fps = fps_window_frames / elapsed
-            print(
-                f"fps (avg over {fps_window_frames} frames, {elapsed:.3f}s): {fps:.2f}"
-            )
+            print(f"FPS: {fps:.2f}")
             fps_window_start = time.perf_counter()
             fps_window_frames = 0
     cv2.destroyAllWindows()

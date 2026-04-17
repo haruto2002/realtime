@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from pathlib import Path
 
 import cv2
@@ -18,8 +19,19 @@ class DEIMv2Detector:
         self.weight_path = weight_path
         self.device = device
         self.model, self.img_size, self.vit_backbone = self.build_detector()
-        self.transforms = self.build_transforms()
         self.threshold = threshold
+        self._transforms = self._build_transforms()
+
+    def _build_transforms(self):
+        return T.Compose(
+            [
+                T.Resize(self.img_size),
+                T.ToTensor(),
+                T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+                if self.vit_backbone
+                else T.Lambda(lambda x: x),
+            ]
+        )
 
     def build_detector(self):
         """Main function"""
@@ -54,47 +66,7 @@ class DEIMv2Detector:
 
         return model, img_size, vit_backbone
 
-    def build_transforms(self):
-        return T.Compose(
-            [
-                T.Resize(self.img_size),
-                T.ToTensor(),
-                T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-                if self.vit_backbone
-                else T.Lambda(lambda x: x),
-            ]
-        )
-
-    def infer(self, image: np.ndarray):
-        # image: cv2のnumpy配列 (BGR)
-
-        # BGR → RGB
-        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
-        # numpy → PIL
-        im_pil = Image.fromarray(image_rgb)
-
-        w, h = im_pil.size
-        orig_size = torch.tensor([[w, h]]).to(self.device)
-
-        im_data = self.transforms(im_pil).unsqueeze(0).to(self.device)
-
-        output = self.model(im_data, orig_size)
-        output_labels, output_boxes, output_scores = output
-        output_labels = output_labels.detach().cpu().numpy()
-        output_boxes = output_boxes.detach().cpu().numpy()
-        output_scores = output_scores.detach().cpu().numpy()
-        result = self.post_process(
-            output_labels[0],
-            output_boxes[0],
-            output_scores[0],
-            orig_size.tolist()[0],
-            self.img_size,
-        )
-
-        return result
-
-    def infer_batch(self, images: list[np.ndarray]) -> list[np.ndarray]:
+    def infer_batch(self, images: Sequence[np.ndarray]) -> list[np.ndarray]:
         """複数枚を1回の forward で推論する。各要素は cv2 の BGR (H,W,3)。"""
         if len(images) == 0:
             return []
@@ -106,7 +78,7 @@ class DEIMv2Detector:
             im_pil = Image.fromarray(image_rgb)
             w, h = im_pil.size
             orig_rows.append([w, h])
-            tensors.append(self.transforms(im_pil))
+            tensors.append(self._transforms(im_pil))
 
         im_data = torch.stack(tensors, dim=0).to(self.device)
         orig_size = torch.tensor(orig_rows, device=self.device)
@@ -131,14 +103,9 @@ class DEIMv2Detector:
             )
         return results
 
-    def merge_results(self, left_results, right_results, center) -> np.ndarray:
-        """
-        一旦、綺麗に左右に分割された想定で、シンプルなマージを実装
-        """
-        right_results[0] += center
-        right_results[2] += center
-        results = np.concatenate([left_results, right_results], axis=0)
-        return results
+    def infer(self, image: np.ndarray) -> np.ndarray:
+        # image: cv2のnumpy配列 (BGR)
+        return self.infer_batch([image])[0]
 
     def post_process(self, labels, boxes, scores, image_size, resize_size):
         labels = labels[scores > self.threshold]
