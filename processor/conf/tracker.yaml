@@ -1,0 +1,3 @@
+_target_: processor.components.Tracker
+
+cfg_path: pipeline/config/tracker/bytetrack/bytetrack.yaml

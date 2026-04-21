@@ -1,102 +1,80 @@
-import time
+import argparse
+import threading
 from pathlib import Path
 
-import cv2
-import numpy as np
-from detector import Detector
+from hydra.utils import instantiate
+from omegaconf import OmegaConf
 
-from reader import FFmpegRTSPReader
+from processor.components import Detector, Tracker
+from processor.displayer import Displayer
+from processor.reader import FFmpegRTSPReader
+from processor.timer import TimeCounter
+from processor.worker import MotWorker
 
-HOST = "member"
-IP = "192.168.0.10"
-PORT = 554
-PW = "AIST-rwdc"
-RTSP_URL = f"rtsp://{HOST}:{PW}@{IP}:{PORT}/ONVIF/MediaInput?profile=def_profile1"
-W, H = 1920, 1080
+# HOST = "member"
+# IP = "192.168.0.10"
+# PORT = 554
+# PW = "AIST-rwdc"
+# RTSP_URL = f"rtsp://{HOST}:{PW}@{IP}:{PORT}/ONVIF/MediaInput?profile=def_profile1"
+# W, H = 1920, 1080
 
 
-def main():
-    reader = FFmpegRTSPReader(
-        rtsp_url=RTSP_URL,
-        size=(W, H),
-        transport="udp",
-        log_every_sec=1.0,
-        reconnect_backoff_sec=0.5,
+def main(cfg_dir: Path, max_wall_seconds: float | None = None) -> None:
+    time_counter: TimeCounter = instantiate(OmegaConf.load(cfg_dir / "timer.yaml"))
+    print("TimeCounter Setup Done")
+
+    reader: FFmpegRTSPReader = instantiate(
+        OmegaConf.load(cfg_dir / "reader.yaml"),
+        time_counter=time_counter,
     )
     reader.start()
     print("Reader Started")
 
-    # cfg_path = Path("pipeline/config/p2pnet.yaml")
-    cfg_path = Path("pipeline/config/deimv2.yaml")
-    detector = Detector(cfg_path)
-    reader.start_detector(detector, infer_every_n=1)
-    print("Detector Started")
+    displayer: Displayer = instantiate(
+        OmegaConf.load(cfg_dir / "displayer.yaml"),
+        time_counter=time_counter,
+    )
+    print("Displayer Setup Done")
 
-    # GUIウォームアップ
-    cv2.imshow("frame", np.zeros((H, W, 3), np.uint8))
-    cv2.waitKey(1)
+    detector: Detector = instantiate(OmegaConf.load(cfg_dir / "detector.yaml"))
+    print("Detector Setup Done")
+    tracker: Tracker = instantiate(OmegaConf.load(cfg_dir / "tracker.yaml"))
+    print("Tracker Setup Done")
 
-    last_shown_seq = 0
+    worker = MotWorker(
+        time_counter=time_counter,
+        reader=reader,
+        displayer=displayer,
+        detector=detector,
+        tracker=tracker,
+    )
+    worker.start()
+    print("Worker Started")
 
-    n = 0
-    start_iter = 500
+    if max_wall_seconds is not None and max_wall_seconds > 0:
+        threading.Timer(max_wall_seconds, displayer.request_stop).start()
+        print(f"Will stop after {max_wall_seconds} s (wall clock)")
 
-    try:
-        while True:
-            n += 1
-            if n == start_iter:
-                fps_time = time.perf_counter()
-                fps_counter = 0
+    displayer.run_loop()
 
-            start_ts = time.perf_counter()
-            # 推論結果を取得
-            frame, read_ts, det, det_seq, det_time = reader.get_latest_detection()
+    worker.stop()
+    reader.stop()
 
-            if det_seq == last_shown_seq:
-                if cv2.waitKey(1) & 0xFF == ord("q"):
-                    break
-                time.sleep(0.01)
-                continue
+    time_counter.save()
 
-            # スキップ検出
-            if last_shown_seq != 0:
-                skipped = det_seq - last_shown_seq - 1
-                if skipped > 0:
-                    reader.stats.skipped_frames += skipped
-            last_shown_seq = det_seq
 
-            if n >= start_iter:
-                fps_counter += 1
-                now = time.perf_counter()
-                elapsed = now - fps_time
-                fps = fps_counter / elapsed
-                reader.stats.fps = fps
-                cv2.putText(
-                    frame,
-                    f"{fps}FPS",
-                    (1200, 40),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    1,
-                    (0, 255, 0),
-                    2,
-                )
-
-            cv2.imshow("frame", frame)
-            if cv2.waitKey(1) & 0xFF == ord("q"):
-                break
-
-            end_ts = time.perf_counter()
-            latency = end_ts - read_ts
-            display_time = end_ts - start_ts
-            reader.stats.latency = latency
-            reader.stats.display_time = display_time
-
-            reader.log_status()
-    finally:
-        reader.stop()
-        cv2.destroyAllWindows()
+def get_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--cfg_dir", type=str, default="processor/conf")
+    parser.add_argument(
+        "--max_wall_seconds",
+        type=float,
+        default=None,
+        help="この秒数経過後に表示ループを止め、通常どおり save して終了する。",
+    )
+    return parser.parse_args()
 
 
 if __name__ == "__main__":
-    main()
-    # print(RTSP_URL)
+    args = get_args()
+    main(Path(args.cfg_dir), max_wall_seconds=args.max_wall_seconds)

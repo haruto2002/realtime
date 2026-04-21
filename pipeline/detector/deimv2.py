@@ -9,13 +9,114 @@ from PIL import Image
 
 from modules.detector.DEIMv2.engine.core import YAMLConfig
 
+MAP_MODEL_SIZE_TO_FILE_NAME = {
+    "Atto": "deimv2_hgnetv2_atto_coco",
+    "Femto": "deimv2_hgnetv2_femto_coco",
+    "Pico": "deimv2_hgnetv2_pico_coco",
+    "N": "deimv2_hgnetv2_n_coco",
+    "S": "deimv2_dinov3_s_coco",
+    "M": "deimv2_dinov3_m_coco",
+    "L": "deimv2_dinov3_l_coco",
+    "X": "deimv2_dinov3_x_coco",
+}
+
+LABEL_MAP_ID_TO_NAME = {
+    1: "person",
+    2: "bicycle",
+    3: "car",
+    4: "motorcycle",
+    5: "airplane",
+    6: "bus",
+    7: "train",
+    8: "truck",
+    9: "boat",
+    10: "traffic light",
+    11: "fire hydrant",
+    12: "stop sign",
+    13: "parking meter",
+    14: "bench",
+    15: "bird",
+    16: "cat",
+    17: "dog",
+    18: "horse",
+    19: "sheep",
+    20: "cow",
+    21: "elephant",
+    22: "bear",
+    23: "zebra",
+    24: "giraffe",
+    25: "backpack",
+    26: "umbrella",
+    27: "handbag",
+    28: "tie",
+    29: "suitcase",
+    30: "frisbee",
+    31: "skis",
+    32: "snowboard",
+    33: "sports ball",
+    34: "kite",
+    35: "baseball bat",
+    36: "baseball glove",
+    37: "skateboard",
+    38: "surfboard",
+    39: "tennis racket",
+    40: "bottle",
+    41: "wine glass",
+    42: "cup",
+    43: "fork",
+    44: "knife",
+    45: "spoon",
+    46: "bowl",
+    47: "banana",
+    48: "apple",
+    49: "sandwich",
+    50: "orange",
+    51: "broccoli",
+    52: "carrot",
+    53: "hot dog",
+    54: "pizza",
+    55: "donut",
+    56: "cake",
+    57: "chair",
+    58: "couch",
+    59: "potted plant",
+    60: "bed",
+    61: "dining table",
+    62: "toilet",
+    63: "tv",
+    64: "laptop",
+    65: "mouse",
+    66: "remote",
+    67: "keyboard",
+    68: "cell phone",
+    69: "microwave",
+    70: "oven",
+    71: "toaster",
+    72: "sink",
+    73: "refrigerator",
+    74: "book",
+    75: "clock",
+    76: "vase",
+    77: "scissors",
+    78: "teddy bear",
+    79: "hair drier",
+    80: "toothbrush",
+}
+
 
 class DEIMv2Detector:
     def __init__(
-        self, cfg_path: Path, weight_path: Path, device: str, threshold: float
+        self,
+        model_size: str,
+        cfg_dir: str,
+        weight_dir: str,
+        device: str,
+        threshold: float,
     ):
-        self.cfg_path = cfg_path
-        self.weight_path = weight_path
+        self.cfg_path = Path(cfg_dir) / f"{MAP_MODEL_SIZE_TO_FILE_NAME[model_size]}.yml"
+        self.weight_path = (
+            Path(weight_dir) / f"{MAP_MODEL_SIZE_TO_FILE_NAME[model_size]}.pth"
+        )
         self.device = device
         self.model, self.img_size, self.vit_backbone = self.build_detector()
         self.transforms = self.build_transforms()
@@ -84,13 +185,7 @@ class DEIMv2Detector:
         output_labels = output_labels.detach().cpu().numpy()
         output_boxes = output_boxes.detach().cpu().numpy()
         output_scores = output_scores.detach().cpu().numpy()
-        result = self.post_process(
-            output_labels[0],
-            output_boxes[0],
-            output_scores[0],
-            orig_size.tolist()[0],
-            self.img_size,
-        )
+        result = self.post_process(output_labels[0], output_boxes[0], output_scores[0])
 
         return result
 
@@ -117,36 +212,18 @@ class DEIMv2Detector:
         output_boxes = output_boxes.detach().cpu().numpy()
         output_scores = output_scores.detach().cpu().numpy()
 
-        orig_list = orig_size.tolist()
         results: list[np.ndarray] = []
         for i in range(len(images)):
             results.append(
-                self.post_process(
-                    output_labels[i],
-                    output_boxes[i],
-                    output_scores[i],
-                    orig_list[i],
-                    self.img_size,
-                )
+                self.post_process(output_labels[i], output_boxes[i], output_scores[i])
             )
         return results
 
-    def merge_results(self, left_results, right_results, center) -> np.ndarray:
-        """
-        一旦、綺麗に左右に分割された想定で、シンプルなマージを実装
-        """
-        right_results[0] += center
-        right_results[2] += center
-        results = np.concatenate([left_results, right_results], axis=0)
-        return results
-
-    def post_process(self, labels, boxes, scores, image_size, resize_size):
+    def post_process(self, labels, boxes, scores):
+        #  memo: deimv2の出力は元の画像サイズの座標系に戻されている
         labels = labels[scores > self.threshold]
         boxes = boxes[scores > self.threshold]
         scores = scores[scores > self.threshold]
-        # inverted_detect_boxes = self.invert_transform_boxes(
-        #     image_size, resize_size, boxes
-        # )
         result = np.concatenate(
             [
                 boxes,
@@ -157,17 +234,23 @@ class DEIMv2Detector:
         )
         return result
 
-    def invert_transform_boxes(self, raw_size, resize_size, boxes):
-        ratio_height = raw_size[0] / resize_size[0]
-        ratio_width = raw_size[1] / resize_size[1]
-        boxes[:, 0] *= ratio_width
-        boxes[:, 1] *= ratio_height
-        boxes[:, 2] *= ratio_width
-        boxes[:, 3] *= ratio_height
-        return boxes
-
     def display_result(self, image: np.ndarray, result: np.ndarray):
         for left, top, right, bottom, label, score in result:
             left, top, right, bottom = map(int, [left, top, right, bottom])
-            cv2.rectangle(image, (left, top), (right, bottom), (0, 0, 255), 2)
+            color = self.get_color(label)
+            cv2.rectangle(image, (left, top), (right, bottom), color, 2)
+            label_name = LABEL_MAP_ID_TO_NAME[int(label + 1)]
+            cv2.putText(
+                image,
+                label_name,
+                (left, top - 10),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1,
+                color,
+                3,
+            )
         return image
+
+    def get_color(self, label_id):
+        color = ((37 * label_id) % 255, (17 * label_id) % 255, (29 * label_id) % 255)
+        return color

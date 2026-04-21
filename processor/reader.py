@@ -7,6 +7,8 @@ from typing import Optional, Tuple
 
 import numpy as np
 
+from processor.timer import TimeCounter
+
 
 @dataclass
 class ReaderStats:
@@ -22,6 +24,7 @@ class ReaderStats:
 class FFmpegRTSPReader:
     def __init__(
         self,
+        time_counter: TimeCounter,
         rtsp_url: str,
         size: Tuple[int, int],
         transport: str = "udp",
@@ -34,6 +37,7 @@ class FFmpegRTSPReader:
         """flush_on_queue_full: キュー満杯時に中身を捨ててから現在フレームを1枚だけ入れる。
         False のときは従来どおり put が空くまでブロック（バックプレッシャー）。
         """
+        self.time_counter = time_counter
         self.rtsp_url = rtsp_url
         self.w, self.h = size
         self.transport = transport
@@ -202,6 +206,7 @@ class FFmpegRTSPReader:
 
     def _reader_loop(self) -> None:
         while not self._stop.is_set():
+            start_ts = time.perf_counter()
             if self._proc is None:
                 self._spawn_ffmpeg()
                 time.sleep(0.05)
@@ -231,24 +236,27 @@ class FFmpegRTSPReader:
                 time.sleep(self.reconnect_backoff_sec)
                 continue
 
+            arrived_ts = time.perf_counter()
             frame = np.frombuffer(raw, dtype=np.uint8).reshape((self.h, self.w, 3))
-            now = time.perf_counter()
+            loaded_ts = time.perf_counter()
 
             with self._lock:
                 self._latest_frame = frame
-                self._latest_ts = now
+                self._latest_ts = loaded_ts
                 self._latest_seq += 1
                 self.stats.read_latest_frame_id = self._latest_seq
                 self.stats.read_frames += 1
                 seq = self._latest_seq
 
             if self._frame_queue is not None:
-                item = (frame.copy(), seq, now)
+                item = (frame.copy(), seq, loaded_ts)
                 try:
                     self._frame_queue.put_nowait(item)
                 except queue.Full:
                     if self.flush_on_queue_full:
-                        print(f"Flush frame queue({self.stats.queue_full_flushes + 1})")
+                        print(
+                            f"Flush frame queue ({self.stats.queue_full_flushes + 1})"
+                        )
                         dropped = self._flush_frame_queue()
                         self.stats.queue_full_flushes += 1
                         self.stats.frames_dropped_on_queue_flush += dropped
@@ -263,6 +271,12 @@ class FFmpegRTSPReader:
                                 break
                             except queue.Full:
                                 continue
+            end_ts = time.perf_counter()
+            self.time_counter.add(seq)
+            self.time_counter.log[seq].frame_reader.start = start_ts
+            self.time_counter.log[seq].frame_reader.arrived = arrived_ts
+            self.time_counter.log[seq].frame_reader.loaded = loaded_ts
+            self.time_counter.log[seq].frame_reader.end = end_ts
 
         self._terminate_ffmpeg()
 

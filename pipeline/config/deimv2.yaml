@@ -1,6 +1,0 @@
-_target_: pipeline.detector.deimv2.DEIMv2Detector
-
-cfg_path: modules/detector/DEIMv2/configs/deimv2/deimv2_hgnetv2_pico_coco.yml
-weight_path: weights/deimv2/deimv2_hgnetv2_pico_coco.pth
-device: cpu
-threshold: 0.1

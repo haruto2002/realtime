@@ -1,0 +1,5 @@
+_target_: processor.components.Detector
+
+# cfg_path: pipeline/config/detector/deimv2/deimv2.yaml
+cfg_path: pipeline/config/detector/p2pnet/p2pnet.yaml
+devide_size: null # [320, 320] # (height, width)
