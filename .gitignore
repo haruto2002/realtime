@@ -7,3 +7,6 @@ __pycache__/
 *tmp*
 
 experiments/results/
+results/
+videos/
+time*

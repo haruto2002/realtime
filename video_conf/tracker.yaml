@@ -1,0 +1,4 @@
+_target_: processor.components.Tracker
+
+# cfg_path: video_conf/tracker/bytetrack/bytetrack.yaml
+cfg_path: video_conf/tracker/point_bytetrack/point_bytetrack.yaml
