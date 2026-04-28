@@ -9,5 +9,5 @@ __pycache__/
 
 experiments/results/
 results/
-videos/
+samples/
 time*
