@@ -1,0 +1,4 @@
+_target_: processor.components.Detector
+
+cfg_path: img_conf/detector/yolo26/yolo26.yaml
+devide_size: null # [320, 320] # (height, width)

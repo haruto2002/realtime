@@ -252,5 +252,9 @@ class DEIMv2Detector:
         return image
 
     def get_color(self, label_id):
-        color = ((37 * label_id) % 255, (17 * label_id) % 255, (29 * label_id) % 255)
+        color = (
+            int((37 * label_id) % 255),
+            int((17 * label_id) % 255),
+            int((29 * label_id) % 255),
+        )
         return color

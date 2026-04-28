@@ -36,7 +36,8 @@ dependencies = [
   "tensorboard",
   "calflops",
   "transformers",
-  "cython_bbox"
+  "cython_bbox",
+  "ultralytics>=8.4.42",
 ]
 
 [tool.uv]

@@ -1,0 +1,7 @@
+_target_: pipeline.detector.deimv2.DEIMv2Detector
+
+model_size: Atto
+cfg_dir: modules/detector/DEIMv2/configs/deimv2
+weight_dir: weights/deimv2
+device: cpu
+threshold: 0.1

@@ -49,7 +49,10 @@ class ByteTrackTracker:
             )
         return image
 
-    def get_color(self, idx):
-        idx = idx * 3
-        color = ((37 * idx) % 255, (17 * idx) % 255, (29 * idx) % 255)
+    def get_color(self, label_id):
+        color = (
+            int((37 * label_id) % 255),
+            int((17 * label_id) % 255),
+            int((29 * label_id) % 255),
+        )
         return color

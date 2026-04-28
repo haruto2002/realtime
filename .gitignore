@@ -1,4 +1,5 @@
 *.pth
+*.pt
 *.jpg
 *.png
 *.tar.gz
