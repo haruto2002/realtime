@@ -13,9 +13,12 @@ class MotApp:
         max_wall_seconds=None,
     ):
         self.time_counter = instantiate(time_counter)
+        print("TimeCounter Setup Done")
 
         self.reader = instantiate(reader, time_counter=self.time_counter)
+        print("Reader Setup Done")
         self.displayer = instantiate(displayer, time_counter=self.time_counter)
+        print("Displayer Setup Done")
 
         self.worker = instantiate(
             worker,
@@ -23,6 +26,7 @@ class MotApp:
             reader=self.reader,
             displayer=self.displayer,
         )
+        print("Worker Setup Done")
 
         self.max_wall_seconds = max_wall_seconds
 
