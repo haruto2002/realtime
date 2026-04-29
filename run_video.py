@@ -1,21 +1,19 @@
-import argparse
+import os
 import time
 from pathlib import Path
 
 import cv2
-from hydra.utils import instantiate
-from omegaconf import OmegaConf
 
 from processor.components import Detector, Tracker
 
 
-def main(
+def run_video(
     path2detector_cfg: str, path2tracker_cfg: str, path2video: str, output_path: str
 ) -> None:
 
-    detector: Detector = instantiate(OmegaConf.load(Path(path2detector_cfg)))
+    detector = Detector(Path(path2detector_cfg), devide_size=None)
     print("Detector Setup Done")
-    tracker: Tracker = instantiate(OmegaConf.load(Path(path2tracker_cfg)))
+    tracker = Tracker(Path(path2tracker_cfg))
     print("Tracker Setup Done")
 
     pipeline(path2video, detector, tracker, output_path)
@@ -33,6 +31,7 @@ def pipeline(path2video: str, detector: Detector, tracker: Tracker, output_path:
         start_ts = time.perf_counter()
         ret, frame = video_capture.read()
         if not ret:
+            print("Video finished")
             break
         frame_set_ts = time.perf_counter()
         dets = detector.infer(frame)
@@ -55,37 +54,33 @@ def ms(time: float) -> str:
     return f"{time * 1000:.2f} ms"
 
 
-def get_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--path2detector_cfg", type=str, default="video_conf/detector.yaml"
-    )
-    parser.add_argument(
-        "--path2tracker_cfg", type=str, default="video_conf/tracker.yaml"
-    )
-    parser.add_argument(
-        "--path2video",
-        type=str,
-        default="hanabi.mp4",
-    )
-    parser.add_argument(
-        "--output_path",
-        type=str,
-        default="hanabi_output_deim.mp4",
-    )
-    return parser.parse_args()
+def main(model: str, name: str):
+    if model == "yolo26":
+        path2detector_cfg = "video_conf/detector/yolo26/yolo26.yaml"
+        path2tracker_cfg = "video_conf/tracker/bytetrack/bytetrack.yaml"
+    elif model == "deimv2":
+        path2detector_cfg = "video_conf/detector/deimv2/deimv2.yaml"
+        path2tracker_cfg = "video_conf/tracker/bytetrack/bytetrack.yaml"
+    elif model == "p2pnet":
+        path2detector_cfg = "video_conf/detector/p2pnet/p2pnet.yaml"
+        path2tracker_cfg = "video_conf/tracker/point_bytetrack/point_bytetrack.yaml"
+    else:
+        raise ValueError(f"Invalid model: {model}")
+    path2video = f"samples/vid/videos/{name}.mp4"
+    output_path = f"vis/videos/{name}_{model}.mp4"
+    assert os.path.exists(path2video), f"Video file not found: {path2video}"
+    run_video(path2detector_cfg, path2tracker_cfg, path2video, output_path)
+
+
+def main_all():
+    os.makedirs("vis/videos", exist_ok=True)
+    models = ["yolo26", "deimv2", "p2pnet"]
+    names = ["newyork", "palace", "hanabi", "sibuya_a", "sibuya_b"]
+    for model in models:
+        for name in names:
+            print(f"Running {model} {name}")
+            main(model, name)
 
 
 if __name__ == "__main__":
-    # args = get_args()
-    # path2detector_cfg = args.path2detector_cfg
-    # path2tracker_cfg = args.path2tracker_cfg
-    # path2video = args.path2video
-    # output_path = args.output_path
-
-    path2detector_cfg = "video_conf/detector.yaml"
-    path2tracker_cfg = "video_conf/tracker.yaml"
-    name = "newyork"
-    path2video = f"videos/raw/{name}.mov"
-    output_path = f"videos/output/{name}.mp4"
-    main(path2detector_cfg, path2tracker_cfg, path2video, output_path)
+    main_all()

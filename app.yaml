@@ -1,0 +1,54 @@
+# config/app.yaml
+_target_: processor.app.MotApp
+
+time_counter:
+  _target_: processor.timer.TimeCounter
+  save_dir: results
+
+reader:
+  _target_: processor.reader.FFmpegRTSPReader
+  rtsp_url: rtsp://member:AIST-rwdc@192.168.0.10:554/ONVIF/MediaInput?profile=def_profile1
+  size: [1920, 1080]
+  transport: udp
+  output_fps: 30
+  frame_queue_maxsize: 100
+  reconnect_backoff_sec: 0.5
+  flush_on_queue_full: true
+
+displayer:
+  _target_: processor.displayer.Displayer
+  window_name: realtime mot
+  maxsize: 100
+  freq_to_report_fps: 100
+  flush_on_queue_full: true
+  report_single: false
+  report_avg: true
+
+# single model worker
+# worker:
+#   _target_: processor.worker.MotWorker
+#   detector:
+#     _target_: processor.components.Detector
+#     cfg_path: pipeline/config/detector/p2pnet/p2pnet.yaml
+#     devide_size: null
+#   tracker:
+#     _target_: processor.components.Tracker
+#     cfg_path: pipeline/config/tracker/point_bytetrack/point_bytetrack.yaml
+
+# two model worker
+worker:
+  _target_: processor.worker.TwoModelMotWorker
+  point_detector:
+    _target_: processor.components.Detector
+    cfg_path: pipeline/config/detector/p2pnet/p2pnet.yaml
+  box_detector:
+    _target_: processor.components.Detector
+    cfg_path: pipeline/config/detector/yolo26/yolo26.yaml
+  point_tracker:
+    _target_: processor.components.Tracker
+    cfg_path: pipeline/config/tracker/point_bytetrack/point_bytetrack.yaml
+  box_tracker:
+    _target_: processor.components.Tracker
+    cfg_path: pipeline/config/tracker/bytetrack/bytetrack.yaml
+
+max_wall_seconds: null

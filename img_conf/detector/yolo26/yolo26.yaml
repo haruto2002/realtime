@@ -2,7 +2,7 @@ _target_: pipeline.detector.yolo26.YOLODetector
 
 model_size: x
 weight_dir: weights/yolo26
-img_size: [1080, 1920] # (height, width)
-device: cpu
+img_long_side: null
+device: cuda:0
 conf_threshold: 0.2
 iou_threshold: 0.7

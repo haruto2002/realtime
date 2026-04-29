@@ -38,7 +38,13 @@ dependencies = [
   "transformers",
   "cython_bbox",
   "ultralytics>=8.4.42",
+  "mean-average-precision>=2024.1.5.0",
 ]
 
 [tool.uv]
 package = false
+
+# CUDAのバージョンが12の時は下記を使用、13であれば不要
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"

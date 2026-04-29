@@ -11,14 +11,14 @@ class YOLODetector:
         model_size: str,
         weight_dir: str,
         device: str,
-        img_size: tuple[int, int],
+        img_long_side: int | None,
         conf_threshold: float,
         iou_threshold: float,
     ):
         assert model_size in ["n", "s", "m", "l", "x"], "Invalid model size"
         self.weight_path = Path(weight_dir) / f"yolo26{model_size}.pt"
         self.device = device
-        self.img_size = img_size
+        self.img_long_side = img_long_side
         self.conf_threshold = conf_threshold
         self.iou_threshold = iou_threshold
 
@@ -31,11 +31,15 @@ class YOLODetector:
         return model
 
     def infer(self, image: np.ndarray):
+        if self.img_long_side is None:
+            height, width = image.shape[:2]
+            self.img_long_side = max(height, width)
         result = self.model(
             image,
-            imgsz=(self.img_size[1], self.img_size[0]),
+            imgsz=self.img_long_side,
             conf=self.conf_threshold,
             iou=self.iou_threshold,
+            device=self.device,
         )[0]
         boxes = result.boxes.xyxy.detach().cpu().numpy()
         scores = result.boxes.conf.detach().cpu().numpy()
