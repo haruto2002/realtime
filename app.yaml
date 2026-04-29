@@ -37,19 +37,23 @@ displayer:
 #     cfg_path: pipeline/config/tracker/point_bytetrack/point_bytetrack.yaml
 
 # two model worker
+# worker:
+#   _target_: processor.worker.TwoModelMotWorker
+#   point_detector:
+#     _target_: processor.components.Detector
+#     cfg_path: pipeline/config/detector/p2pnet/p2pnet.yaml
+#   box_detector:
+#     _target_: processor.components.Detector
+#     cfg_path: pipeline/config/detector/yolo26/yolo26.yaml
+#   point_tracker:
+#     _target_: processor.components.Tracker
+#     cfg_path: pipeline/config/tracker/point_bytetrack/point_bytetrack.yaml
+#   box_tracker:
+#     _target_: processor.components.Tracker
+#     cfg_path: pipeline/config/tracker/bytetrack/bytetrack.yaml
+
 worker:
-  _target_: processor.worker.TwoModelMotWorker
-  point_detector:
-    _target_: processor.components.Detector
-    cfg_path: pipeline/config/detector/p2pnet/p2pnet.yaml
-  box_detector:
-    _target_: processor.components.Detector
-    cfg_path: pipeline/config/detector/yolo26/yolo26.yaml
-  point_tracker:
-    _target_: processor.components.Tracker
-    cfg_path: pipeline/config/tracker/point_bytetrack/point_bytetrack.yaml
-  box_tracker:
-    _target_: processor.components.Tracker
-    cfg_path: pipeline/config/tracker/bytetrack/bytetrack.yaml
+  _target_: processor.worker.PoseWorker
+
 
 max_wall_seconds: null
