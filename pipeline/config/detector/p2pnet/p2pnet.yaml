@@ -5,4 +5,5 @@ weight_path: weights/p2pnet/cutout.pth
 device: cuda:0
 dtype: float16
 threshold: 0.1
-img_size: [1080, 1920]
+# img_size: [1080, 1920] # (height, width)
+img_size: null

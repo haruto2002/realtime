@@ -3,15 +3,13 @@ import time
 from pathlib import Path
 
 import cv2
-from hydra.utils import instantiate
-from omegaconf import OmegaConf
 
 from processor.components import Detector
 
 
 def main(path2detector_cfg: str, path2image: str, output_path: str) -> None:
 
-    detector: Detector = instantiate(OmegaConf.load(Path(path2detector_cfg)))
+    detector = Detector(Path(path2detector_cfg))
     print("Detector Setup Done")
 
     pipeline(path2image, detector, output_path)
@@ -54,13 +52,7 @@ def get_args():
 
 
 if __name__ == "__main__":
-    # args = get_args()
-    # path2detector_cfg = args.path2detector_cfg
-    # path2tracker_cfg = args.path2tracker_cfg
-    # path2video = args.path2video
-    # output_path = args.output_path
-
-    path2detector_cfg = "img_conf/detector.yaml"
+    path2detector_cfg = "pipeline/config/detector/p2pnet/p2pnet.yaml"
     path2image = "hd_demo.jpg"
     output_path = "hd_demo_output.jpg"
     main(path2detector_cfg, path2image, output_path)

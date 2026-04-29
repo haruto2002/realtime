@@ -38,9 +38,9 @@ class P2PNetDetector:
                 int(img_size[0] // 128 * 128),
                 int(img_size[1] // 128 * 128),
             )
+            self.transforms = self.build_transforms()
         else:
             self.image_size = None
-        self.transforms = self.build_transforms()
 
     def build_detector(self):
         cfg = OmegaConf.load(self.cfg_path)
@@ -83,15 +83,16 @@ class P2PNetDetector:
                 int(self.image_size[0] // 128 * 128),
                 int(self.image_size[1] // 128 * 128),
             )
+            self.transforms = self.build_transforms()
 
         transformed_img = self.transform(img)
         input_img = transformed_img.unsqueeze(0).to(self.device)
         return input_img
 
     def infer(self, image: np.ndarray):
-        input_img = self.preprocess(image)
+        input = self.preprocess(image)
         with torch.no_grad(), torch.autocast(self.device, dtype=self.dtype):
-            outputs = self.detector(input_img.unsqueeze(0).to(self.device))
+            outputs = self.detector(input)
             outputs_scores = (
                 torch.nn.functional.softmax(outputs["pred_logits"], -1)[:, :, 1]
                 .detach()
