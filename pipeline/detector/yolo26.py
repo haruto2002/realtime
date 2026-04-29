@@ -40,6 +40,7 @@ class YOLODetector:
             conf=self.conf_threshold,
             iou=self.iou_threshold,
             device=self.device,
+            verbose=False,
         )[0]
         boxes = result.boxes.xyxy.detach().cpu().numpy()
         scores = result.boxes.conf.detach().cpu().numpy()

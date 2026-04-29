@@ -52,7 +52,8 @@ def get_args():
 
 
 if __name__ == "__main__":
-    path2detector_cfg = "pipeline/config/detector/p2pnet/p2pnet.yaml"
+    # path2detector_cfg = "pipeline/config/detector/p2pnet/p2pnet.yaml"
+    path2detector_cfg = "pipeline/config/detector/yolo26/yolo26.yaml"
     path2image = "hd_demo.jpg"
     output_path = "hd_demo_output.jpg"
     main(path2detector_cfg, path2image, output_path)
