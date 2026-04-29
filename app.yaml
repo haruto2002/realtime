@@ -1,5 +1,6 @@
 # config/app.yaml
 _target_: processor.app.MotApp
+_recursive_: false
 
 time_counter:
   _target_: processor.timer.TimeCounter

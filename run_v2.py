@@ -7,4 +7,9 @@ from omegaconf import OmegaConf
 def main(cfg_path: Path):
     cfg = OmegaConf.load(cfg_path)
     app = instantiate(cfg)
-    app.run()
+    # app.run()
+
+
+if __name__ == "__main__":
+    cfg_path = "app.yaml"
+    main(cfg_path)

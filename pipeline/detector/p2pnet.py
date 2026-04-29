@@ -32,11 +32,14 @@ class P2PNetDetector:
         self.dtype = getattr(torch, dtype) if isinstance(dtype, str) else dtype
         self.detector = self.build_detector()
         self.threshold = threshold
-        self.image_size = (int(img_size[0]), int(img_size[1]))
-        self.resize_size = (
-            int(img_size[0] // 128 * 128),
-            int(img_size[1] // 128 * 128),
-        )
+        if img_size is not None:
+            self.image_size = (int(img_size[0]), int(img_size[1]))
+            self.resize_size = (
+                int(img_size[0] // 128 * 128),
+                int(img_size[1] // 128 * 128),
+            )
+        else:
+            self.image_size = None
         self.transforms = self.build_transforms()
 
     def build_detector(self):
@@ -74,6 +77,13 @@ class P2PNetDetector:
         return input_img
 
     def preprocess(self, img):
+        if self.image_size is None:
+            self.image_size = img.shape[:2]
+            self.resize_size = (
+                int(self.image_size[0] // 128 * 128),
+                int(self.image_size[1] // 128 * 128),
+            )
+
         transformed_img = self.transform(img)
         input_img = transformed_img.unsqueeze(0).to(self.device)
         return input_img
