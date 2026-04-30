@@ -1,6 +1,8 @@
 import threading
 import time
 
+import numpy as np
+
 from processor.components import Detector, Tracker
 from processor.displayer import Displayer
 from processor.reader import FFmpegRTSPReader
@@ -57,20 +59,9 @@ class MotWorker:
             if frame is None:
                 continue
 
-            dets = [detector.infer(frame) for detector in self.detectors]
-            detected_ts = time.perf_counter()
-
-            tracks = [
-                tracker.update(tracker.convert_to_tracker_inputs(det))
-                for tracker, det in zip(self.trackers, dets)
-            ]
-            tracked_ts = time.perf_counter()
-
-            [
-                tracker.draw(frame, track)
-                for tracker, track in zip(self.trackers, tracks)
-            ]
-            drawn_ts = time.perf_counter()
+            frame, detected_ts, tracked_ts, drawn_ts = self.process_frame(
+                frame, self.detectors, self.trackers
+            )
 
             self.displayer.submit(frame, seq)
             submitted_ts = time.perf_counter()
@@ -93,6 +84,24 @@ class MotWorker:
             ts_logger.worker.end = end_ts
             ts_logger.frame_set_fps = frame_set_fps
             ts_logger.submit_fps = submit_fps
+
+    @staticmethod
+    def process_frame(
+        frame: np.ndarray, detectors: list[Detector], trackers: list[Tracker]
+    ):
+        dets = [detector.infer(frame) for detector in detectors]
+        detected_ts = time.perf_counter()
+
+        tracks = [
+            tracker.update(tracker.convert_to_tracker_inputs(det))
+            for tracker, det in zip(trackers, dets)
+        ]
+        tracked_ts = time.perf_counter()
+
+        [tracker.draw(frame, track) for tracker, track in zip(trackers, tracks)]
+        drawn_ts = time.perf_counter()
+
+        return frame, detected_ts, tracked_ts, drawn_ts
 
 
 class PoseWorker:
