@@ -3,7 +3,7 @@ import threading
 from hydra.utils import instantiate
 
 
-class MotApp:
+class RealtimeApp:
     def __init__(
         self,
         time_counter,

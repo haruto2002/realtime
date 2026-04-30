@@ -1,5 +1,5 @@
 # config/app.yaml
-_target_: processor.app.MotApp
+_target_: processor.app.RealtimeApp
 _recursive_: false
 
 time_counter:
@@ -13,47 +13,76 @@ reader:
   transport: udp
   output_fps: 30
   frame_queue_maxsize: 100
-  reconnect_backoff_sec: 0.5
   flush_on_queue_full: true
 
 displayer:
   _target_: processor.displayer.Displayer
-  window_name: realtime mot
+  window_name: realtime
   maxsize: 100
   freq_to_report_fps: 100
   flush_on_queue_full: true
   report_single: false
   report_avg: true
 
-# single model worker
+# MOT worker
+worker:
+  _target_: processor.worker.MotWorker
+  detectors:
+    - _target_: processor.components.Detector
+      detector: 
+        _target_: pipeline.detector.p2pnet.P2PNetDetector
+        cfg_path: modules/detector/p2pnet/conf/p2p.yaml
+        weight_path: weights/p2pnet/cutout.pth
+        device: cuda:0
+        dtype: float16
+        threshold: 0.1
+        img_size: [1080, 1920]
+      devide_size: null
+    - _target_: processor.components.Detector
+      detector: 
+        _target_: pipeline.detector.yolo26.YOLODetector
+        model_size: x
+        weight_dir: weights/yolo26
+        img_long_side: 1920
+        device: cuda:0
+        conf_threshold: 0.01
+        iou_threshold: 0.7
+      devide_size: null
+  trackers:
+    - _target_: processor.components.Tracker
+      tracker: 
+        _target_: pipeline.tracker.point_bytetrack.PointByteTrackTracker
+        track_thresh: 0.6
+        track_buffer: 30
+        match_thresh: 10.0
+        distance_metric: "euclidean"
+        frame_rate: 30
+    - _target_: processor.components.Tracker
+      tracker:
+        _target_: pipeline.tracker.bytetrack.ByteTrackTracker
+        track_thresh: 0.5
+        track_buffer: 30
+        match_thresh: 0.8
+        mot20: False
+        frame_rate: 30
+    
 # worker:
 #   _target_: processor.worker.MotWorker
-#   detector:
-#     _target_: processor.components.Detector
-#     cfg_path: pipeline/config/detector/p2pnet/p2pnet.yaml
-#     devide_size: null
-#   tracker:
-#     _target_: processor.components.Tracker
-#     cfg_path: pipeline/config/tracker/point_bytetrack/point_bytetrack.yaml
+#   detectors:
+#     - _target_: processor.components.Detector
+#       detector: pipeline/config/detector/p2pnet/p2pnet.yaml
+#       devide_size: null
+#     - _target_: processor.components.Detector
+#       detector: pipeline/config/detector/yolo26/yolo26.yaml
+#       devide_size: null
+#   trackers:
+#     - _target_: processor.components.Tracker
+#       tracker: pipeline/config/tracker/point_bytetrack/point_bytetrack.yaml
+#     - _target_: processor.components.Tracker
+#       tracker: pipeline/config/tracker/bytetrack/bytetrack.yaml
 
-# two model worker
+# Pose worker
 # worker:
-#   _target_: processor.worker.TwoModelMotWorker
-#   point_detector:
-#     _target_: processor.components.Detector
-#     cfg_path: pipeline/config/detector/p2pnet/p2pnet.yaml
-#   box_detector:
-#     _target_: processor.components.Detector
-#     cfg_path: pipeline/config/detector/yolo26/yolo26.yaml
-#   point_tracker:
-#     _target_: processor.components.Tracker
-#     cfg_path: pipeline/config/tracker/point_bytetrack/point_bytetrack.yaml
-#   box_tracker:
-#     _target_: processor.components.Tracker
-#     cfg_path: pipeline/config/tracker/bytetrack/bytetrack.yaml
-
-worker:
-  _target_: processor.worker.PoseWorker
-
+#   _target_: processor.worker.PoseWorker
 
 max_wall_seconds: null

@@ -16,7 +16,6 @@ class ReaderStats:
     read_frames: int = 0
     read_fail: int = 0
     restarts: int = 0
-    latency: float = 0.0
     queue_full_flushes: int = 0
     frames_dropped_on_queue_flush: int = 0
 
@@ -29,20 +28,15 @@ class FFmpegRTSPReader:
         size: Tuple[int, int],
         transport: str = "udp",
         ffmpeg_path: str = "ffmpeg",
-        reconnect_backoff_sec: float = 0.5,
         output_fps: Optional[float] = None,
         frame_queue_maxsize: int = 0,
         flush_on_queue_full: bool = True,
     ):
-        """flush_on_queue_full: キュー満杯時に中身を捨ててから現在フレームを1枚だけ入れる。
-        False のときは従来どおり put が空くまでブロック（バックプレッシャー）。
-        """
         self.time_counter = time_counter
         self.rtsp_url = rtsp_url
         self.w, self.h = size
         self.transport = transport
         self.ffmpeg_path = ffmpeg_path
-        self.reconnect_backoff_sec = reconnect_backoff_sec
         self.output_fps = output_fps
         self.frame_queue_maxsize = frame_queue_maxsize
 
@@ -56,8 +50,8 @@ class FFmpegRTSPReader:
 
         # latest（最新フレーム1枚）
         self._latest_frame: Optional[np.ndarray] = None
-        self._latest_ts: float = 0.0
-        self._latest_seq: int = 0
+        self._latest_ts: Optional[float] = None
+        self._latest_seq: Optional[int] = None
 
         # 順次取得。満杯のときはキューを空にしてから最新1枚だけ入れ直す（バックプレッシャーで詰まらない）
         self._frame_queue: Optional[queue.Queue[Tuple[np.ndarray, int, float]]] = None
@@ -79,64 +73,28 @@ class FFmpegRTSPReader:
     def stop(self) -> None:
         self._stop.set()
         self._terminate_ffmpeg()
+        if self._thread:
+            self._thread.join(timeout=3.0)
 
-    def get_latest(self) -> Tuple[Optional[np.ndarray], int, float]:
+    def get_latest(self) -> Tuple[Optional[np.ndarray], Optional[int], Optional[float]]:
         with self._lock:
-            if self._latest_frame is None:
-                return None, self._latest_seq, self._latest_ts
-            return self._latest_frame.copy(), self._latest_seq, self._latest_ts
+            return self._latest_frame, self._latest_seq, self._latest_ts
 
-    def get_next(
-        self, block: bool = True, timeout: Optional[float] = None
-    ) -> Tuple[Optional[np.ndarray], int, float]:
-        """順番どおりに1フレーム取得。frame_queue_maxsize>0 が必要。
-
-        block=True でキューが空のとき待つ。消費が極端に遅いと読み取り側がキューをフラッシュするため、
-        seq に飛び番が出ることがある。
-        """
+    def get_next(self) -> Tuple[Optional[np.ndarray], Optional[int], Optional[float]]:
         if self._frame_queue is None:
             raise RuntimeError(
-                "get_next を使うには frame_queue_maxsize を 1 以上にしてください"
+                "To use get_next, please set frame_queue_maxsize to 1 or higher."
             )
         try:
-            frame, seq, ts = self._frame_queue.get(block=block, timeout=timeout)
+            frame, seq, ts = self._frame_queue.get(timeout=0.2)
             return frame, seq, ts
         except queue.Empty:
-            with self._lock:
-                seq, ts = self._latest_seq, self._latest_ts
-            return None, seq, ts
-
-    def drain_frame_queue(self) -> int:
-        """キューに溜まったフレームをすべて捨てる。get_latest から get_next へ切り替える前や、本処理開始直前に呼ぶ。
-
-        get_latest はキューを消費しないため、初期化中に古いフレームが最大 maxsize まで溜まる。
-        本処理の最初の get_next が「古い先頭」にならないよう、ここで空にする。
-        """
-        if self._frame_queue is None:
-            return 0
-        return self._flush_frame_queue()
-
-    def _flush_frame_queue(self) -> int:
-        """キューを空にし、取り除いた要素数を返す（スレッドセーフな Queue のみを触る）。"""
-        if self._frame_queue is None:
-            return 0
-        n = 0
-        while True:
-            try:
-                self._frame_queue.get_nowait()
-                n += 1
-            except queue.Empty:
-                break
-        return n
+            return None, None, None
 
     # -------- internal --------
-
-    @staticmethod
-    def _read_exact(stream, n: int) -> bytes:
-        """パイプからちょうど n バイト読む（複数回の read にまたがる場合も連結）。
-
-        1回の read(n) は環境によって n 未満で返ることがある。欠けたまま reshape すると
-        フレーム境界がずれ、以降すべて矩形状の色破損に見えることがある。
+    def _read_exact(self, stream, n: int) -> bytes:
+        """
+        パイプからちょうど n バイト読む（複数回の read にまたがる場合も連結）
         """
         parts: list[bytes] = []
         remaining = n
@@ -185,7 +143,7 @@ class FFmpegRTSPReader:
         self._proc = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
             bufsize=10**8,
         )
         self.stats.restarts += 1
@@ -209,7 +167,7 @@ class FFmpegRTSPReader:
             start_ts = time.perf_counter()
             if self._proc is None:
                 self._spawn_ffmpeg()
-                time.sleep(0.05)
+                time.sleep(0.5)
 
             proc = self._proc
             if proc is None:
@@ -218,7 +176,7 @@ class FFmpegRTSPReader:
             if proc.poll() is not None:
                 self._print_ffmpeg_error(proc)
                 self._spawn_ffmpeg()
-                time.sleep(self.reconnect_backoff_sec)
+                time.sleep(0.5)
                 continue
 
             try:
@@ -233,12 +191,18 @@ class FFmpegRTSPReader:
             if len(raw) < self.frame_bytes:
                 self.stats.read_fail += 1
                 self._spawn_ffmpeg()
-                time.sleep(self.reconnect_backoff_sec)
+                time.sleep(0.5)
                 continue
 
             arrived_ts = time.perf_counter()
             frame = np.frombuffer(raw, dtype=np.uint8).reshape((self.h, self.w, 3))
             loaded_ts = time.perf_counter()
+
+            if self._latest_ts is not None:
+                interval = loaded_ts - self.latest_ts
+                fps = (1.0 / interval) if interval > 0 else None
+            else:
+                fps = None
 
             with self._lock:
                 self._latest_frame = frame
@@ -248,29 +212,7 @@ class FFmpegRTSPReader:
                 self.stats.read_frames += 1
                 seq = self._latest_seq
 
-            if self._frame_queue is not None:
-                item = (frame.copy(), seq, loaded_ts)
-                try:
-                    self._frame_queue.put_nowait(item)
-                except queue.Full:
-                    if self.flush_on_queue_full:
-                        print(
-                            f"Flush frame queue ({self.stats.queue_full_flushes + 1})"
-                        )
-                        dropped = self._flush_frame_queue()
-                        self.stats.queue_full_flushes += 1
-                        self.stats.frames_dropped_on_queue_flush += dropped
-                        try:
-                            self._frame_queue.put_nowait(item)
-                        except queue.Full:
-                            self._frame_queue.put(item, block=True, timeout=1.0)
-                    else:
-                        while not self._stop.is_set():
-                            try:
-                                self._frame_queue.put(item, timeout=0.2)
-                                break
-                            except queue.Full:
-                                continue
+            self._put_frame_queue((frame, seq, loaded_ts))
             end_ts = time.perf_counter()
 
             ts_logger = self.time_counter.add(seq)
@@ -278,6 +220,7 @@ class FFmpegRTSPReader:
             ts_logger.frame_reader.arrived = arrived_ts
             ts_logger.frame_reader.loaded = loaded_ts
             ts_logger.frame_reader.end = end_ts
+            ts_logger.frame_read_fps = fps
 
         self._terminate_ffmpeg()
 
@@ -309,11 +252,24 @@ class FFmpegRTSPReader:
         dropped = self._flush_frame_queue()
         self.stats.queue_full_flushes += 1
         self.stats.frames_dropped_on_queue_flush += dropped
-
         try:
             self._frame_queue.put_nowait(item)
         except queue.Full:
-            self.stats.frames_dropped_on_queue_flush += 1
+            raise RuntimeError(
+                "Failed to put item into frame queue even after flushing"
+            )
+
+    def _flush_frame_queue(self) -> int:
+        if self._frame_queue is None:
+            return 0
+        n = 0
+        while True:
+            try:
+                self._frame_queue.get_nowait()
+                n += 1
+            except queue.Empty:
+                break
+        return n
 
     def _print_ffmpeg_error(self, proc: subprocess.Popen) -> None:
         try:

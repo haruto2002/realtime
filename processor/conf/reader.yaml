@@ -1,9 +1,0 @@
-_target_: processor.reader.FFmpegRTSPReader
-
-rtsp_url: rtsp://member:AIST-rwdc@192.168.0.10:554/ONVIF/MediaInput?profile=def_profile1
-size: [1920, 1080] # (width, height)
-transport: udp
-output_fps: 30
-frame_queue_maxsize: 100
-reconnect_backoff_sec: 0.5
-flush_on_queue_full: true

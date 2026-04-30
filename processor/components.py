@@ -4,16 +4,24 @@ import numpy as np
 from hydra.utils import instantiate
 from omegaconf import OmegaConf
 
-
-def build_component(conf_path: Path):
-    cfg = OmegaConf.load(conf_path)
-    component = instantiate(cfg)
-    return component
+from pipeline.detector.deimv2 import DEIMv2Detector
+from pipeline.detector.p2pnet import P2PNetDetector
+from pipeline.detector.yolo26 import YOLODetector
+from pipeline.tracker.bytetrack import ByteTrackTracker
+from pipeline.tracker.point_bytetrack import PointByteTrackTracker
 
 
 class Detector:
-    def __init__(self, cfg_path: Path, devide_size: tuple[int, int] | None = None):
-        self.detector = build_component(cfg_path)
+    def __init__(
+        self,
+        detector: P2PNetDetector | YOLODetector | DEIMv2Detector | Path,
+        devide_size: tuple[int, int] | None = None,
+    ):
+        if isinstance(detector, Path):
+            cfg = OmegaConf.load(detector)
+            detector = instantiate(cfg)
+        else:
+            self.detector = detector
         self.devide_size = devide_size
 
     def infer(self, image: np.ndarray) -> np.ndarray:
@@ -33,8 +41,12 @@ class Detector:
 
 
 class Tracker:
-    def __init__(self, cfg_path: Path):
-        self.tracker = build_component(cfg_path)
+    def __init__(self, tracker: PointByteTrackTracker | ByteTrackTracker | Path):
+        if isinstance(tracker, Path):
+            cfg = OmegaConf.load(tracker)
+            tracker = instantiate(cfg)
+        else:
+            self.tracker = tracker
 
     def update(self, dets: np.ndarray) -> np.ndarray:
         return self.tracker.update(dets)

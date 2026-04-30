@@ -6,7 +6,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 
-class MainProcessorTimeStamps(BaseModel):
+class WorkerTimeStamps(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     start: float | None = None
@@ -40,12 +40,11 @@ class DisplayerTimeStamps(BaseModel):
 class TimeStamps(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    main_processor: MainProcessorTimeStamps = Field(
-        default_factory=MainProcessorTimeStamps
-    )
+    worker: WorkerTimeStamps = Field(default_factory=WorkerTimeStamps)
     frame_reader: FrameReaderTimeStamps = Field(default_factory=FrameReaderTimeStamps)
     displayer: DisplayerTimeStamps = Field(default_factory=DisplayerTimeStamps)
 
+    frame_read_fps: float | None = None
     frame_set_fps: float | None = None
     submit_fps: float | None = None
     display_fps: float | None = None
@@ -92,20 +91,20 @@ class TimeCounter:
     def frame_set_latency(self, seq: int) -> tuple[float | None, float | None]:
         ts = self.get(seq)
         process_time = self._delta(ts.frame_reader.end, ts.frame_reader.arrived)
-        waiting_time = self._delta(ts.main_processor.frame_set, ts.frame_reader.end)
+        waiting_time = self._delta(ts.worker.frame_set, ts.frame_reader.end)
         return process_time, waiting_time
 
     def det_latency(self, seq: int) -> float | None:
         ts = self.get(seq)
-        return self._delta(ts.main_processor.detected, ts.main_processor.frame_set)
+        return self._delta(ts.worker.detected, ts.worker.frame_set)
 
     def track_latency(self, seq: int) -> float | None:
         ts = self.get(seq)
-        return self._delta(ts.main_processor.tracked, ts.main_processor.detected)
+        return self._delta(ts.worker.tracked, ts.worker.detected)
 
     def draw_latency(self, seq: int) -> float | None:
         ts = self.get(seq)
-        return self._delta(ts.main_processor.drawn, ts.main_processor.tracked)
+        return self._delta(ts.worker.drawn, ts.worker.tracked)
 
     def display_latency(self, seq: int) -> tuple[float | None, float | None]:
         ts = self.get(seq)
@@ -170,6 +169,7 @@ class TimeCounter:
     def make_avg_fps_report(self, num_frames: int) -> list[str]:
         lines = [
             "< FPS >",
+            f"{self._label('Frame read')}: {self.calc_avg_fps(num_frames, 'frame_read_fps'):.2f}",
             f"{self._label('Frame set')}: {self.calc_avg_fps(num_frames, 'frame_set_fps'):.2f}",
             f"{self._label('Submit')}: {self.calc_avg_fps(num_frames, 'submit_fps'):.2f}",
             f"{self._label('Display')}: {self.calc_avg_fps(num_frames, 'display_fps'):.2f}",
