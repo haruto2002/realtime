@@ -272,13 +272,48 @@ class FFmpegRTSPReader:
                             except queue.Full:
                                 continue
             end_ts = time.perf_counter()
-            self.time_counter.add(seq)
-            self.time_counter.log[seq].frame_reader.start = start_ts
-            self.time_counter.log[seq].frame_reader.arrived = arrived_ts
-            self.time_counter.log[seq].frame_reader.loaded = loaded_ts
-            self.time_counter.log[seq].frame_reader.end = end_ts
+
+            ts_logger = self.time_counter.add(seq)
+            ts_logger.frame_reader.start = start_ts
+            ts_logger.frame_reader.arrived = arrived_ts
+            ts_logger.frame_reader.loaded = loaded_ts
+            ts_logger.frame_reader.end = end_ts
 
         self._terminate_ffmpeg()
+
+    def _put_frame_queue(self, item: tuple[np.ndarray, int, float]) -> None:
+        # キューを使用しない場合
+        if self._frame_queue is None:
+            return
+
+        # キューが空いてれば入れる
+        try:
+            self._frame_queue.put_nowait(item)
+            return
+        except queue.Full:
+            pass
+
+        # キューが満杯のとき、
+        # flush_on_queue_full が False ならブロックして待つ
+        if not self.flush_on_queue_full:
+            while not self._stop.is_set():
+                try:
+                    self._frame_queue.put(item, timeout=0.2)
+                    return
+                except queue.Full:
+                    continue
+            return
+
+        # flush_on_queue_full が True ならキューを空にしてから入れる
+        print(f"Flush frame queue ({self.stats.queue_full_flushes + 1})")
+        dropped = self._flush_frame_queue()
+        self.stats.queue_full_flushes += 1
+        self.stats.frames_dropped_on_queue_flush += dropped
+
+        try:
+            self._frame_queue.put_nowait(item)
+        except queue.Full:
+            self.stats.frames_dropped_on_queue_flush += 1
 
     def _print_ffmpeg_error(self, proc: subprocess.Popen) -> None:
         try:
