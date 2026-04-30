@@ -41,7 +41,7 @@ class MotWorker:
     def pipeline_worker(self):
         while not self.displayer.stopped:
             start_ts = time.perf_counter()
-            frame, seq, _ts = self.reader.get_next(timeout=0.2)
+            frame, seq, _ts = self.reader.get_next()
             frame_set_ts = time.perf_counter()
             if self._pre_frame_set_ts != 0.0:
                 frame_set_interval = frame_set_ts - self._pre_frame_set_ts
@@ -131,7 +131,7 @@ class PoseWorker:
     def pipeline_worker(self):
         while not self.displayer.stopped:
             start_ts = time.perf_counter()
-            frame, seq, _ts = self.reader.get_next(timeout=0.2)
+            frame, seq, _ts = self.reader.get_next()
             frame_set_ts = time.perf_counter()
             if self._pre_frame_set_ts != 0.0:
                 frame_set_interval = frame_set_ts - self._pre_frame_set_ts
