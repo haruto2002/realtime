@@ -132,6 +132,8 @@ class PoseWorker:
         while not self.displayer.stopped:
             start_ts = time.perf_counter()
             frame, seq, _ts = self.reader.get_next()
+            if frame is None:
+                continue
             frame_set_ts = time.perf_counter()
             if self._pre_frame_set_ts != 0.0:
                 frame_set_interval = frame_set_ts - self._pre_frame_set_ts
@@ -141,11 +143,6 @@ class PoseWorker:
             else:
                 frame_set_fps = None
             self._pre_frame_set_ts = frame_set_ts
-
-            if self.displayer.stopped:
-                break
-            if frame is None:
-                continue
 
             assert seq in self.time_counter.log, (
                 f"seq {seq} not found in time_counter.log"

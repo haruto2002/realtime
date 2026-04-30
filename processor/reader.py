@@ -50,8 +50,8 @@ class FFmpegRTSPReader:
 
         # latest（最新フレーム1枚）
         self._latest_frame: Optional[np.ndarray] = None
-        self._latest_ts: Optional[float] = None
-        self._latest_seq: Optional[int] = None
+        self._latest_ts: float = 0.0
+        self._latest_seq: int = 0
 
         # 順次取得。満杯のときはキューを空にしてから最新1枚だけ入れ直す（バックプレッシャーで詰まらない）
         self._frame_queue: Optional[queue.Queue[Tuple[np.ndarray, int, float]]] = None
@@ -76,7 +76,7 @@ class FFmpegRTSPReader:
         if self._thread:
             self._thread.join(timeout=3.0)
 
-    def get_latest(self) -> Tuple[Optional[np.ndarray], Optional[int], Optional[float]]:
+    def get_latest(self) -> Tuple[Optional[np.ndarray], int, float]:
         with self._lock:
             return self._latest_frame, self._latest_seq, self._latest_ts
 
@@ -211,6 +211,8 @@ class FFmpegRTSPReader:
                 self.stats.read_latest_frame_id = self._latest_seq
                 self.stats.read_frames += 1
                 seq = self._latest_seq
+                if seq == 1:
+                    print("Start reading frame!")
 
             self._put_frame_queue((frame, seq, loaded_ts))
             end_ts = time.perf_counter()
