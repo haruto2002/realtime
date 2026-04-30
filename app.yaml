@@ -55,7 +55,7 @@ worker:
         track_thresh: 0.6
         track_buffer: 30
         match_thresh: 10.0
-        distance_metric: "euclidean"
+        distance_metric: euclidean
         frame_rate: 30
     - _target_: processor.components.Tracker
       tracker:

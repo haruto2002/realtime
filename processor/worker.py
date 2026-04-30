@@ -57,20 +57,19 @@ class MotWorker:
             if frame is None:
                 continue
 
-            dets = []
-            for detector in self.detectors:
-                dets.append(detector.infer(frame))
+            dets = [detector.infer(frame) for detector in self.detectors]
             detected_ts = time.perf_counter()
 
-            tracks = []
-            for i, tracker in enumerate(self.trackers):
-                tracks.append(
-                    tracker.update(tracker.convert_to_tracker_inputs(dets[i]))
-                )
+            tracks = [
+                tracker.update(tracker.convert_to_tracker_inputs(det))
+                for tracker, det in zip(self.trackers, dets)
+            ]
             tracked_ts = time.perf_counter()
 
-            for j, tracker in enumerate(self.trackers):
-                frame = tracker.draw(frame, tracks[j])
+            [
+                tracker.draw(frame, track)
+                for tracker, track in zip(self.trackers, tracks)
+            ]
             drawn_ts = time.perf_counter()
 
             self.displayer.submit(frame, seq)

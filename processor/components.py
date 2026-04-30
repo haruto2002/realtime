@@ -19,7 +19,7 @@ class Detector:
     ):
         if isinstance(detector, Path):
             cfg = OmegaConf.load(detector)
-            detector = instantiate(cfg)
+            self.detector = instantiate(cfg)
         else:
             self.detector = detector
         self.devide_size = devide_size
@@ -44,7 +44,7 @@ class Tracker:
     def __init__(self, tracker: PointByteTrackTracker | ByteTrackTracker | Path):
         if isinstance(tracker, Path):
             cfg = OmegaConf.load(tracker)
-            tracker = instantiate(cfg)
+            self.tracker = instantiate(cfg)
         else:
             self.tracker = tracker
 

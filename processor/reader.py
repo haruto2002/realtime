@@ -199,7 +199,7 @@ class FFmpegRTSPReader:
             loaded_ts = time.perf_counter()
 
             if self._latest_ts is not None:
-                interval = loaded_ts - self.latest_ts
+                interval = loaded_ts - self._latest_ts
                 fps = (1.0 / interval) if interval > 0 else None
             else:
                 fps = None
