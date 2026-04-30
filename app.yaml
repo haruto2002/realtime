@@ -47,6 +47,7 @@ worker:
         device: cuda:0
         conf_threshold: 0.01
         iou_threshold: 0.7
+        classes: [0, 1, 2, 3, 5, 6, 7] # person, bicycle, car, motorcycle, bus, train, truck
       devide_size: null
   trackers:
     - _target_: processor.components.Tracker
