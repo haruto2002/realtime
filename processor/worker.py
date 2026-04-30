@@ -200,7 +200,7 @@ class PoseWorker:
     def build_model(self):
         from ultralytics import YOLO
 
-        model = YOLO("yolo26x-pose.pt")
+        model = YOLO("weights/yolo26/yolo26x-pose.pt")
         model.to("cuda:0")
         model.eval()
         return model
@@ -238,7 +238,7 @@ class PoseWorker:
                 f"seq {seq} not found in time_counter.log"
             )
 
-            result = self.model(frame, imgsz=(1920, 1080))[0]
+            result = self.model(frame, imgsz=1920, verbose=False)[0]
             detected_ts = time.perf_counter()
 
             frame = result.plot()
