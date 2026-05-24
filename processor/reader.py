@@ -3,6 +3,7 @@ import subprocess
 import threading
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional, Tuple
 
 import numpy as np
@@ -20,24 +21,25 @@ class ReaderStats:
     frames_dropped_on_queue_flush: int = 0
 
 
-class FFmpegRTSPReader:
+class FFmpegVideoReader:
     def __init__(
         self,
         time_counter: TimeCounter,
-        rtsp_url: str,
+        source: str,
         size: Tuple[int, int],
-        transport: str = "udp",
         ffmpeg_path: str = "ffmpeg",
         output_fps: Optional[float] = None,
+        transport: Optional[str] = None,
         frame_queue_maxsize: int = 0,
         flush_on_queue_full: bool = True,
     ):
         self.time_counter = time_counter
-        self.rtsp_url = rtsp_url
+        self.source = source
+        self.is_rtsp = source.lower().startswith(("rtsp://", "rtsps://"))
         self.w, self.h = size
-        self.transport = transport
         self.ffmpeg_path = ffmpeg_path
         self.output_fps = output_fps
+        self.transport = transport
         self.frame_queue_maxsize = frame_queue_maxsize
 
         self.frame_bytes = self.w * self.h * 3  # bgr24
@@ -110,23 +112,39 @@ class FFmpegRTSPReader:
         vf = f"scale={self.w}:{self.h}"
         if self.output_fps is not None and self.output_fps > 0:
             vf = f"{vf},fps={self.output_fps}"
-        return [
+
+        cmd = [
             self.ffmpeg_path,
             "-hide_banner",
             "-loglevel",
             "error",
-            "-rtsp_transport",
-            self.transport,
-            "-fflags",
-            "nobuffer",
-            "-flags",
-            "low_delay",
-            "-probesize",
-            "32",
-            "-analyzeduration",
-            "0",
+        ]
+
+        if self.is_rtsp:
+            cmd += [
+                "-rtsp_transport",
+                self.transport,
+                "-fflags",
+                "nobuffer",
+                "-flags",
+                "low_delay",
+                "-probesize",
+                "32",
+                "-analyzeduration",
+                "0",
+            ]
+        else:
+            # # 動画ファイルを繰り返し読みたい場合
+            # if self.loop_video:
+            #     cmd += ["-stream_loop", "-1"]
+
+            # ファイル存在チェックを入れたい場合
+            if not Path(self.source).exists():
+                raise FileNotFoundError(f"Video file not found: {self.source}")
+
+        cmd += [
             "-i",
-            self.rtsp_url,
+            self.source,
             "-an",
             "-f",
             "rawvideo",
@@ -136,6 +154,8 @@ class FFmpegRTSPReader:
             vf,
             "pipe:1",
         ]
+
+        return cmd
 
     def _spawn_ffmpeg(self) -> None:
         self._terminate_ffmpeg()

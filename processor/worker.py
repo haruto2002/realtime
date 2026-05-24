@@ -5,7 +5,7 @@ import numpy as np
 
 from processor.components import Detector, Tracker
 from processor.displayer import Displayer
-from processor.reader import FFmpegRTSPReader
+from processor.reader import FFmpegVideoReader
 from processor.timer import TimeCounter
 
 
@@ -13,7 +13,7 @@ class MotWorker:
     def __init__(
         self,
         time_counter: TimeCounter,
-        reader: FFmpegRTSPReader,
+        reader: FFmpegVideoReader,
         displayer: Displayer,
         detectors: list[Detector],
         trackers: list[Tracker],
@@ -108,7 +108,7 @@ class PoseWorker:
     def __init__(
         self,
         time_counter: TimeCounter,
-        reader: FFmpegRTSPReader,
+        reader: FFmpegVideoReader,
         displayer: Displayer,
     ):
         self.time_counter = time_counter
