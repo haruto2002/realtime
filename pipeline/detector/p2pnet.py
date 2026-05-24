@@ -18,6 +18,7 @@ class P2PNetDetector:
         device,
         dtype,
         threshold,
+        img_size,
     ):
         assert Path(cfg_path).exists(), (
             f"Config file does not exist: {cfg_path} Current working directory: {Path.cwd()}"
@@ -31,6 +32,15 @@ class P2PNetDetector:
         self.dtype = getattr(torch, dtype) if isinstance(dtype, str) else dtype
         self.detector = self.build_detector()
         self.threshold = threshold
+        if img_size is not None:
+            self.image_size = (int(img_size[0]), int(img_size[1]))
+            self.resize_size = (
+                int(img_size[0] // 128 * 128),
+                int(img_size[1] // 128 * 128),
+            )
+            self.transforms = self.build_transforms()
+        else:
+            self.image_size = None
 
     def build_detector(self):
         cfg = OmegaConf.load(self.cfg_path)
@@ -45,30 +55,44 @@ class P2PNetDetector:
         model.eval()
         return model
 
-    def transform(self, img, resize_size):
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        new_height, new_width = resize_size
-        transform = A.Compose(
+    def build_transforms(self):
+        return A.Compose(
             [
-                A.Resize(new_height, new_width, interpolation=cv2.INTER_AREA),
+                A.Resize(
+                    self.resize_size[0],
+                    self.resize_size[1],
+                    interpolation=cv2.INTER_AREA,
+                ),
                 A.Normalize(p=1.0),
             ],
             keypoint_params=A.KeypointParams(format="xy"),
         )
-        transformed = transform(image=img, keypoints=[])
-        transformed_img = transformed["image"]
 
+    def transform(self, img):
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        transformed = self.transforms(image=img, keypoints=[])
+        transformed_img = transformed["image"]
         input_img = np.array(transformed_img).astype(np.float32).transpose((2, 0, 1))
-        input_img = torch.from_numpy(input_img).clone()
+        input_img = torch.from_numpy(input_img)
+        return input_img
+
+    def preprocess(self, img):
+        if self.image_size is None:
+            self.image_size = img.shape[:2]
+            self.resize_size = (
+                int(self.image_size[0] // 128 * 128),
+                int(self.image_size[1] // 128 * 128),
+            )
+            self.transforms = self.build_transforms()
+
+        transformed_img = self.transform(img)
+        input_img = transformed_img.unsqueeze(0).to(self.device)
         return input_img
 
     def infer(self, image: np.ndarray):
-        w, h = image.shape[:2]
-        image_size = (int(w), int(h))
-        resize_size = (int(w // 128 * 128), int(h // 128 * 128))
-        input_img = self.transform(image, resize_size)
+        input = self.preprocess(image)
         with torch.no_grad(), torch.autocast(self.device, dtype=self.dtype):
-            outputs = self.detector(input_img.unsqueeze(0).to(self.device))
+            outputs = self.detector(input)
             outputs_scores = (
                 torch.nn.functional.softmax(outputs["pred_logits"], -1)[:, :, 1]
                 .detach()
@@ -79,8 +103,8 @@ class P2PNetDetector:
             result = self.post_process(
                 outputs_scores[0],
                 outputs_points[0],
-                resize_size,
-                image_size,
+                self.resize_size,
+                self.image_size,
             )
             return result
 

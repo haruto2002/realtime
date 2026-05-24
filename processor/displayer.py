@@ -10,8 +10,6 @@ from processor.timer import TimeCounter
 
 
 class Displayer:
-    """処理スレッドから submit、imshow / waitKey はメインスレッドで run_loop を呼ぶ。"""
-
     def __init__(
         self,
         time_counter: TimeCounter,
@@ -32,11 +30,8 @@ class Displayer:
 
         self._stop = threading.Event()
 
-        self.last_display_seq = 0
-        self.display_frames = 0
         self.queue_full_flushes = 0
         self.frames_dropped_on_queue_flush = 0
-        self.last_display_ts = 0.0
         self._prev_display_ts = 0.0
 
     @property
@@ -44,7 +39,6 @@ class Displayer:
         return self._stop.is_set()
 
     def request_stop(self) -> None:
-        """メインスレッド外からも呼べる。run_loop とワーカーを終了させる。"""
         self._stop.set()
 
     def _flush_display_queue(self) -> int:
@@ -63,30 +57,39 @@ class Displayer:
 
         arrived_ts = time.perf_counter()
         self.time_counter.log[seq].displayer.arrived = arrived_ts
-        item = (frame.copy(), seq)
+        item = (frame, seq)
 
+        # キューが空いてれば入れる
+        try:
+            self.queue.put_nowait(item)
+            return
+        except queue.Full:
+            pass
+
+        # キューが満杯のとき、
+        # flush_on_queue_full が False ならブロックして待つ
+        if not self.flush_on_queue_full:
+            while not self._stop.is_set():
+                try:
+                    self.queue.put(item, timeout=0.2)
+                    break
+                except queue.Full:
+                    continue
+            return
+
+        # flush_on_queue_full が True ならキューを空にしてから入れる
+        print(f"Flush display queue ({self.queue_full_flushes + 1})")
+        dropped = self._flush_display_queue()
+        self.queue_full_flushes += 1
+        self.frames_dropped_on_queue_flush += dropped
         try:
             self.queue.put_nowait(item)
         except queue.Full:
-            if self.flush_on_queue_full:
-                print(f"Flush display queue ({self.queue_full_flushes + 1})")
-                dropped = self._flush_display_queue()
-                self.queue_full_flushes += 1
-                self.frames_dropped_on_queue_flush += dropped
-                try:
-                    self.queue.put_nowait(item)
-                except queue.Full:
-                    self.queue.put(item, block=True, timeout=1.0)
-            else:
-                while not self._stop.is_set():
-                    try:
-                        self.queue.put(item, timeout=0.2)
-                        break
-                    except queue.Full:
-                        continue
+            raise RuntimeError(
+                "Failed to put item into display queue even after flushing"
+            )
 
     def run_loop(self):
-        """メインスレッドからだけ呼ぶ"""
         try:
             while not self._stop.is_set():
                 start_ts = time.perf_counter()
@@ -95,19 +98,15 @@ class Displayer:
                 except queue.Empty:
                     continue
 
+                if self.time_counter.log.get(seq) is None:
+                    raise RuntimeError(f"seq {seq} not found in time_counter.log")
+
                 frame_set_ts = time.perf_counter()
-                assert seq in self.time_counter.log, (
-                    f"seq {seq} not found in time_counter.log"
-                )
 
                 cv2.imshow(self.window_name, frame)
                 key = cv2.waitKey(1) & 0xFF
 
                 displayed_ts = time.perf_counter()
-
-                self.last_display_seq = seq
-                self.display_frames += 1
-                self.last_display_ts = displayed_ts
 
                 if self._prev_display_ts != 0.0:
                     display_interval = displayed_ts - self._prev_display_ts
@@ -117,11 +116,13 @@ class Displayer:
                 self._prev_display_ts = displayed_ts
 
                 end_ts = time.perf_counter()
-                self.time_counter.log[seq].displayer.start = start_ts
-                self.time_counter.log[seq].displayer.frame_set = frame_set_ts
-                self.time_counter.log[seq].displayer.displayed = displayed_ts
-                self.time_counter.log[seq].displayer.end = end_ts
-                self.time_counter.log[seq].display_fps = fps
+
+                ts_logger = self.time_counter.get(seq)
+                ts_logger.displayer.start = start_ts
+                ts_logger.displayer.frame_set = frame_set_ts
+                ts_logger.displayer.displayed = displayed_ts
+                ts_logger.displayer.end = end_ts
+                ts_logger.display_fps = fps
                 if self.report_single:
                     self.time_counter.report_single(seq)
 
