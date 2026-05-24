@@ -30,7 +30,7 @@ class ByteTrackTracker:
         """
         dets: [[left, top, right, bottom, score], ...]
         """
-        return self.tracker.update(dets)
+        return "bbox", self.tracker.update(dets)
 
     def draw(self, image, tracks):
         line_thickness = 3

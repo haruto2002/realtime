@@ -33,7 +33,7 @@ class PointByteTrackTracker:
         """
         dets: [[x, y, score], ...]
         """
-        return self.tracker.update(dets)
+        return "point", self.tracker.update(dets)
 
     def draw(self, image, tracks):
         point_size = 5 * 2

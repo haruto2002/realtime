@@ -9,6 +9,7 @@ class RealtimeApp:
         time_counter,
         reader,
         displayer,
+        publisher,
         worker,
         max_wall_seconds=None,
     ):
@@ -19,12 +20,15 @@ class RealtimeApp:
         print("Reader Setup Done")
         self.displayer = instantiate(displayer, time_counter=self.time_counter)
         print("Displayer Setup Done")
+        self.publisher = instantiate(publisher)
+        print("Publisher Setup Done")
 
         self.worker = instantiate(
             worker,
             time_counter=self.time_counter,
             reader=self.reader,
             displayer=self.displayer,
+            publisher=self.publisher,
         )
         print("Worker Setup Done")
 

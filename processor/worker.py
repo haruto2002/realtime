@@ -5,6 +5,7 @@ import numpy as np
 
 from processor.components import Detector, Tracker
 from processor.displayer import Displayer
+from processor.publisher import Publisher
 from processor.reader import FFmpegVideoReader
 from processor.timer import TimeCounter
 
@@ -15,12 +16,14 @@ class MotWorker:
         time_counter: TimeCounter,
         reader: FFmpegVideoReader,
         displayer: Displayer,
+        publisher: Publisher,
         detectors: list[Detector],
         trackers: list[Tracker],
     ):
         self.time_counter = time_counter
         self.reader = reader
         self.displayer = displayer
+        self.publisher = publisher
         self.detectors = detectors
         self.trackers = trackers
         assert len(self.detectors) == len(self.trackers), (
@@ -43,7 +46,7 @@ class MotWorker:
     def pipeline_worker(self):
         while not self.displayer.stopped:
             start_ts = time.perf_counter()
-            frame, seq, _ts = self.reader.get_next()
+            frame, seq, frame_ts = self.reader.get_next()
             frame_set_ts = time.perf_counter()
             if self._pre_frame_set_ts != 0.0:
                 frame_set_interval = frame_set_ts - self._pre_frame_set_ts
@@ -59,9 +62,12 @@ class MotWorker:
             if frame is None:
                 continue
 
-            frame, detected_ts, tracked_ts, drawn_ts = self.process_frame(
+            frame, detected_ts, tracked_ts, drawn_ts, dets, tracks = self.process_frame(
                 frame, self.detectors, self.trackers
             )
+
+            objects = self.convert_tracks_to_objects(tracks)
+            self.publisher.publish_result(seq, frame_ts, objects)
 
             self.displayer.submit(frame, seq)
             submitted_ts = time.perf_counter()
@@ -85,6 +91,41 @@ class MotWorker:
             ts_logger.frame_set_fps = frame_set_fps
             ts_logger.submit_fps = submit_fps
 
+    def convert_tracks_to_objects(self, tracks):
+        objects = {
+            "point": [],
+            "bbox": [],
+        }
+        for track_type, track_list in tracks:
+            if track_type == "point":
+                for i, track in enumerate(track_list):
+                    x, y = track.point
+                    obj_id = track.track_id
+                    objects["point"].append(
+                        {
+                            "id": int(obj_id),
+                            "x": float(x),
+                            "y": float(y),
+                        }
+                    )
+            elif track_type == "bbox":
+                for i, track in enumerate(track_list):
+                    x1, y1, x2, y2 = track.tlbr
+                    obj_id = track.track_id
+                    objects["bbox"].append(
+                        {
+                            "id": int(obj_id),
+                            "x1": float(x1),
+                            "y1": float(y1),
+                            "x2": float(x2),
+                            "y2": float(y2),
+                        }
+                    )
+            else:
+                raise ValueError(f"Invalid track type: {track_type}")
+
+        return objects
+
     @staticmethod
     def process_frame(
         frame: np.ndarray, detectors: list[Detector], trackers: list[Tracker]
@@ -98,10 +139,13 @@ class MotWorker:
         ]
         tracked_ts = time.perf_counter()
 
-        [tracker.draw(frame, track) for tracker, track in zip(trackers, tracks)]
+        [
+            tracker.draw(frame, track)
+            for tracker, (track_type, track) in zip(trackers, tracks)
+        ]
         drawn_ts = time.perf_counter()
 
-        return frame, detected_ts, tracked_ts, drawn_ts
+        return frame, detected_ts, tracked_ts, drawn_ts, dets, tracks
 
 
 class PoseWorker:

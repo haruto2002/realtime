@@ -10,20 +10,27 @@ reader:
   _target_: processor.reader.FFmpegVideoReader
   # source: rtsp://member:AIST-rwdc@192.168.0.10:554/ONVIF/MediaInput?profile=def_profile1
   source: samples/vid/videos/hanabi.mp4
-  size: [1920, 1080]
+  size: [500, 500]
   output_fps: 30
   transport: udp
   frame_queue_maxsize: 100
-  flush_on_queue_full: true
+  flush_on_queue_full: false
 
 displayer:
   _target_: processor.displayer.Displayer
   window_name: realtime
   maxsize: 100
   freq_to_report_fps: 100
-  flush_on_queue_full: true
+  flush_on_queue_full: false
   report_single: false
   report_avg: true
+
+publisher:
+  _target_: processor.publisher.Publisher
+  broker_host: localhost
+  broker_port: 1883
+  camera_id: cam01
+  pc_id: localhost
 
 # MOT worker
 worker:
@@ -34,18 +41,18 @@ worker:
         _target_: pipeline.detector.p2pnet.P2PNetDetector
         cfg_path: modules/detector/p2pnet/conf/p2p.yaml
         weight_path: weights/p2pnet/cutout.pth
-        device: cuda:0
+        device: cpu
         dtype: float16
         threshold: 0.1
-        img_size: [1080, 1920]
+        img_size: [500, 500]
       devide_size: null
     # - _target_: processor.components.Detector
     #   detector: 
     #     _target_: pipeline.detector.yolo26.YOLODetector
-    #     model_size: x
+    #     model_size: s
     #     weight_dir: weights/yolo26
     #     img_long_side: 1920
-    #     device: cuda:0
+    #     device: cpu
     #     conf_threshold: 0.01
     #     classes: [0, 1, 2, 3, 5, 6, 7] # person, bicycle, car, motorcycle, bus, train, truck
     #   devide_size: null
