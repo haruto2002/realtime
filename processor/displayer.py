@@ -127,7 +127,7 @@ class Displayer:
                     self.time_counter.report_single(seq)
 
                 if self.report_avg and seq % self.freq_to_report_fps == 0:
-                    self.time_counter.report_avg(self.freq_to_report_fps)
+                    self.time_counter.report_avg(seq, self.freq_to_report_fps)
 
                 if key == ord("q"):
                     self._stop.set()

@@ -215,7 +215,9 @@ class FFmpegVideoReader:
                 continue
 
             arrived_ts = time.perf_counter()
-            frame = np.frombuffer(raw, dtype=np.uint8).reshape((self.h, self.w, 3))
+            frame = (
+                np.frombuffer(raw, dtype=np.uint8).reshape((self.h, self.w, 3)).copy()
+            )
             loaded_ts = time.perf_counter()
 
             if self._latest_ts is not None:

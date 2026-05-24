@@ -50,7 +50,7 @@ class TimeStamps(BaseModel):
     display_fps: float | None = None
 
 
-_FPSKey = Literal["frame_set_fps", "submit_fps", "display_fps"]
+_FPSKey = Literal["frame_read_fps", "frame_set_fps", "submit_fps", "display_fps"]
 _LogAdapter = TypeAdapter(dict[int, TimeStamps])
 
 
@@ -131,25 +131,40 @@ class TimeCounter:
     def report_single(self, seq: int) -> None:
         print(self.make_single_report(seq))
 
-    def calc_avg_fps(self, num_frames: int, fps_key: _FPSKey) -> float:
+    def _avg_window_items(
+        self, current_seq: int, num_frames: int
+    ) -> list[tuple[int, TimeStamps]]:
+        """current_seq が直近処理完了側のとき、末尾 num_frames はみのログを取る。"""
+        if num_frames <= 0:
+            raise ValueError("num_frames must be greater than 0")
+        items = sorted(self.log.items())
+        start_idx = max(0, current_seq - num_frames)
+        return items[start_idx : current_seq]
+
+    def calc_avg_fps(
+        self, current_seq: int, num_frames: int, fps_key: _FPSKey
+    ) -> float:
         if num_frames <= 0:
             raise ValueError("num_frames must be greater than 0")
 
-        frames = sorted(self.log.items())[-num_frames:]
         fps_values = [
             value
-            for _, data in frames
+            for _, data in self._avg_window_items(current_seq, num_frames)
             if (value := getattr(data, fps_key)) is not None and value > 0
         ]
         return fmean(fps_values) if fps_values else 0.0
 
     def calc_avg_latency(
-        self, num_frames: int, calculater, with_queue: bool = False
+        self,
+        current_seq: int,
+        num_frames: int,
+        calculater,
+        with_queue: bool = False,
     ) -> tuple[float, float | None]:
         if num_frames <= 0:
             raise ValueError("num_frames must be greater than 0")
 
-        seq_list = sorted(self.log.keys())[-num_frames:]
+        seq_list = [seq for seq, _ in self._avg_window_items(current_seq, num_frames)]
         if not with_queue:
             process_times = [
                 v for seq in seq_list if (v := calculater(seq)) is not None
@@ -166,26 +181,26 @@ class TimeCounter:
                 waiting_times
             ) if waiting_times else 0.0
 
-    def make_avg_fps_report(self, num_frames: int) -> list[str]:
+    def make_avg_fps_report(self, current_seq: int, num_frames: int) -> list[str]:
         lines = [
             "< FPS >",
-            f"{self._label('Frame read')}: {self.calc_avg_fps(num_frames, 'frame_read_fps'):.2f}",
-            f"{self._label('Frame set')}: {self.calc_avg_fps(num_frames, 'frame_set_fps'):.2f}",
-            f"{self._label('Submit')}: {self.calc_avg_fps(num_frames, 'submit_fps'):.2f}",
-            f"{self._label('Display')}: {self.calc_avg_fps(num_frames, 'display_fps'):.2f}",
+            f"{self._label('Frame read')}: {self.calc_avg_fps(current_seq, num_frames, 'frame_read_fps'):.2f}",
+            f"{self._label('Frame set')}: {self.calc_avg_fps(current_seq, num_frames, 'frame_set_fps'):.2f}",
+            f"{self._label('Submit')}: {self.calc_avg_fps(current_seq, num_frames, 'submit_fps'):.2f}",
+            f"{self._label('Display')}: {self.calc_avg_fps(current_seq, num_frames, 'display_fps'):.2f}",
         ]
         return lines
 
-    def make_avg_latency_report(self, num_frames: int) -> list[str]:
-        total, _ = self.calc_avg_latency(num_frames, self.latency)
+    def make_avg_latency_report(self, current_seq: int, num_frames: int) -> list[str]:
+        total, _ = self.calc_avg_latency(current_seq, num_frames, self.latency)
         avg_frame_set, avg_frame_set_waiting = self.calc_avg_latency(
-            num_frames, self.frame_set_latency, with_queue=True
+            current_seq, num_frames, self.frame_set_latency, with_queue=True
         )
-        avg_det, _ = self.calc_avg_latency(num_frames, self.det_latency)
-        avg_track, _ = self.calc_avg_latency(num_frames, self.track_latency)
-        avg_draw, _ = self.calc_avg_latency(num_frames, self.draw_latency)
+        avg_det, _ = self.calc_avg_latency(current_seq, num_frames, self.det_latency)
+        avg_track, _ = self.calc_avg_latency(current_seq, num_frames, self.track_latency)
+        avg_draw, _ = self.calc_avg_latency(current_seq, num_frames, self.draw_latency)
         avg_display, avg_display_waiting = self.calc_avg_latency(
-            num_frames, self.display_latency, with_queue=True
+            current_seq, num_frames, self.display_latency, with_queue=True
         )
         lines = [
             "< Latency >",
@@ -198,9 +213,9 @@ class TimeCounter:
         ]
         return lines
 
-    def make_avg_report(self, num_frames: int) -> str:
-        fps_lines = self.make_avg_fps_report(num_frames)
-        latency_lines = self.make_avg_latency_report(num_frames)
+    def make_avg_report(self, current_seq: int, num_frames: int) -> str:
+        fps_lines = self.make_avg_fps_report(current_seq, num_frames)
+        latency_lines = self.make_avg_latency_report(current_seq, num_frames)
 
         first_line = (
             f"~~~~~~~~~~~~~~~~~ Average (last {num_frames} frames) ~~~~~~~~~~~~~~~~~~"
@@ -217,8 +232,8 @@ class TimeCounter:
         ]
         return "\n".join(lines)
 
-    def report_avg(self, num_frames: int) -> None:
-        print(self.make_avg_report(num_frames))
+    def report_avg(self, current_seq: int, num_frames: int) -> None:
+        print(self.make_avg_report(current_seq, num_frames))
 
     def save(self, save_dir: str | None = None) -> None:
         if save_dir is not None:
@@ -235,7 +250,10 @@ class TimeCounter:
 
         summary_path = Path(self.save_dir) / "summary.txt"
         summary_path.parent.mkdir(parents=True, exist_ok=True)
-        summary_path.write_text(self.make_avg_report(100), encoding="utf-8")
+        summary_path.write_text(
+            self.make_avg_report(max(self.log.keys(), default=0), 100),
+            encoding="utf-8",
+        )
 
 
 class TimeAnalyzer(TimeCounter):
@@ -287,7 +305,9 @@ class TimeAnalyzer(TimeCounter):
         return False
 
     def summary(self, num_frames: int) -> None:
-        self.report_avg(num_frames)
+        if not self.log:
+            return
+        self.report_avg(max(self.log.keys()), num_frames)
 
 
 if __name__ == "__main__":
