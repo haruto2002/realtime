@@ -96,7 +96,6 @@ class YOLODetector:
         device: str,
         img_long_side: int | None,
         conf_threshold: float,
-        iou_threshold: float,
         classes: list[int] | None = None,
     ):
         assert model_size in ["n", "s", "m", "l", "x"], "Invalid model size"
@@ -104,7 +103,6 @@ class YOLODetector:
         self.device = device
         self.img_long_side = img_long_side
         self.conf_threshold = conf_threshold
-        self.iou_threshold = iou_threshold
         self.classes = classes
         self.model = self.build_detector()
 
@@ -122,7 +120,6 @@ class YOLODetector:
             image,
             imgsz=self.img_long_side,
             conf=self.conf_threshold,
-            iou=self.iou_threshold,
             device=self.device,
             classes=self.classes,
             verbose=False,

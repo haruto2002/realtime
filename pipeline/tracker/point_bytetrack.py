@@ -36,7 +36,7 @@ class PointByteTrackTracker:
         return self.tracker.update(dets)
 
     def draw(self, image, tracks):
-        point_size = 5
+        point_size = 5 * 2
         for i, track in enumerate(tracks):
             x, y = track.point
             obj_id = track.track_id

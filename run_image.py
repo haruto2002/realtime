@@ -1,45 +1,35 @@
+import os
 import time
 from pathlib import Path
 
 import cv2
 
-from processor.components import Detector, Tracker
+from processor.components import Detector
 
 
 def main(
-    path2detector_cfg: list[str],
-    path2tracker_cfg: list[str],
+    path2detector_cfg: str,
     path2image: str,
     output_path: str,
 ) -> None:
 
-    detectors = [
-        Detector(Path(path2detector_cfg)) for path2detector_cfg in path2detector_cfg
-    ]
-    trackers = [
-        Tracker(Path(path2tracker_cfg)) for path2tracker_cfg in path2tracker_cfg
-    ]
+    detector = Detector(Path(path2detector_cfg))
     print("Detector Setup Done")
-    print("Tracker Setup Done")
 
-    pipeline(path2image, detectors, trackers, output_path)
+    pipeline(path2image, detector, output_path)
 
 
 def pipeline(
     path2image: str,
-    detectors: list[Detector],
-    trackers: list[Tracker],
+    detector: Detector,
     output_path: str,
 ):
     img = cv2.imread(path2image)
+    img = cv2.resize(img, dsize=None, fx=0.5, fy=0.5)
     start_ts = time.perf_counter()
-    dets = [detector.infer(img) for detector in detectors]
+    dets = detector.infer(img)
     detected_ts = time.perf_counter()
-    tracks = [
-        tracker.update(tracker.convert_to_tracker_inputs(det))
-        for tracker, det in zip(trackers, dets)
-    ]
-    [tracker.draw(img, track) for tracker, track in zip(trackers, tracks)]
+    img = detector.draw(img, dets)
     drawn_ts = time.perf_counter()
     cv2.imwrite(output_path, img)
     end_ts = time.perf_counter()
@@ -53,14 +43,9 @@ def ms(time: float) -> str:
 
 
 if __name__ == "__main__":
-    path2detector_cfg = [
-        "pipeline/config/detector/p2pnet/p2pnet.yaml",
-        "pipeline/config/detector/yolo26/yolo26.yaml",
-    ]
-    path2tracker_cfg = [
-        "pipeline/config/tracker/point_bytetrack/point_bytetrack.yaml",
-        "pipeline/config/tracker/bytetrack/bytetrack.yaml",
-    ]
-    path2image = "hd_demo.jpg"
-    output_path = "hd_demo_output.jpg"
-    main(path2detector_cfg, path2tracker_cfg, path2image, output_path)
+    path2detector_cfg = "img_conf/detector/yolo26/yolo26.yaml"
+    path2image = "samples/img/images/WorldPorters_2023-07-31_17:51:20_DSC_5983_0000.jpg"
+    save_dir = "vis/img/exp0512"
+    output_path = f"{save_dir}/hanabi_yolo26.jpg"
+    os.makedirs(save_dir, exist_ok=True)
+    main(path2detector_cfg, path2image, output_path)

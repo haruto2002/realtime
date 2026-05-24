@@ -4,5 +4,4 @@ model_size: Atto
 cfg_dir: modules/detector/DEIMv2/configs/deimv2
 weight_dir: weights/deimv2
 device: cuda:0
-threshold: 0.0
-# threshold: 0.3
+threshold: 0.01
