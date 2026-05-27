@@ -91,7 +91,8 @@ class MotWorker:
             ts_logger.frame_set_fps = frame_set_fps
             ts_logger.submit_fps = submit_fps
 
-    def convert_tracks_to_objects(self, tracks):
+    @staticmethod
+    def convert_tracks_to_objects(tracks):
         objects = {
             "point": [],
             "bbox": [],

@@ -1,37 +1,71 @@
-import time
+import glob
+import json
+import os
+from pathlib import Path
 
 import cv2
-from ultralytics import YOLO
+
+from processor.components import Detector, Tracker
+from processor.worker import MotWorker
 
 
-def main(size: str):
-    model = YOLO(f"weights/yolo26/yolo26{size}.pt")
-    path2image = "hd_demo.jpg"
-    img = cv2.imread(path2image)
+def run_video(
+    path2video: str, save_dir: str, detectors: list[Detector], trackers: list[Tracker]
+):
+    video_capture = cv2.VideoCapture(path2video)
+    frame_id = 0
+    while True:
+        ret, frame = video_capture.read()
+        if not ret:
+            break
+        frame_id += 1
+        frame, detected_ts, tracked_ts, drawn_ts, dets, tracks = (
+            MotWorker.process_frame(frame, detectors, trackers)
+        )
+        objects = MotWorker.convert_tracks_to_objects(tracks)
+        payload = {
+            "camera_id": None,
+            "pc_id": None,
+            "timestamp": None,
+            "frame_id": frame_id,
+            "objects": objects,
+        }
+        save_path = os.path.join(save_dir, f"{frame_id:06d}.json")
+        with open(save_path, "w") as f:
+            json.dump(payload, f, indent=4)
+        # cv2.imwrite(os.path.join(save_dir, f"{frame_id:06d}.jpg"), frame)
 
-    device = "cpu"
 
-    n = 50
+def main():
+    video_dir = "samples/vid/yokohama_2020508"
+    path2video_list = sorted(glob.glob(os.path.join(video_dir, "*.MOV")))
 
-    start_time = time.perf_counter()
-    for _ in range(n):
-        result = model(
-            path2image,
-            imgsz=1920,
-            conf=0.2,
-            device=device,
-            classes=[0],
-            rect=True,
-            verbose=False,
-        )[0]
-    end_time = time.perf_counter()
-    print(f"size: {size}, time: {(end_time - start_time) / n * 1000:.2f} ms")
-    # result.save(f"size_{size}.jpg", labels=False, conf=False)
+    root_save_dir = "tmp_results/yokohama_2020508"
+    os.makedirs(root_save_dir, exist_ok=True)
+
+    path2detector_cfg = [
+        "video_conf/detector/p2pnet/p2pnet.yaml",
+        "video_conf/detector/yolo26/yolo26.yaml",
+    ]
+    path2tracker_cfg = [
+        "video_conf/tracker/point_bytetrack/point_bytetrack_30.yaml",
+        "video_conf/tracker/bytetrack/bytetrack_30.yaml",
+    ]
+
+    detectors = [
+        Detector(Path(path2detector_cfg)) for path2detector_cfg in path2detector_cfg
+    ]
+    trackers = [
+        Tracker(Path(path2tracker_cfg)) for path2tracker_cfg in path2tracker_cfg
+    ]
+
+    path2video_list = ["samples/vid/yokohama_2020508/kokusaibashi.MOV"]
+    for path2video in path2video_list:
+        place_name = path2video.split("/")[-1].split(".")[0]
+        save_dir = os.path.join(root_save_dir, f"{place_name}")
+        os.makedirs(save_dir, exist_ok=True)
+        run_video(path2video, save_dir, detectors, trackers)
 
 
 if __name__ == "__main__":
-    main("n")
-    main("s")
-    main("m")
-    main("l")
-    main("x")
+    main()

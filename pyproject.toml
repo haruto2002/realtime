@@ -39,7 +39,7 @@ dependencies = [
   "cython_bbox",
   "ultralytics>=8.4.42",
   "mean-average-precision>=2024.1.5.0",
-]
+  "paho-mqtt"]
 
 [tool.uv]
 package = false
