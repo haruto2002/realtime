@@ -1,9 +1,0 @@
-_target_: pipeline.detector.yolo26.YOLODetector
-
-model_size: x
-weight_dir: weights/yolo26
-img_long_side: null
-device: cuda:0
-conf_threshold: 0.001
-classes: null
-# classes: [1, 2, 3, 5, 6, 7] # bicycle, car, motorcycle, bus, train, truck

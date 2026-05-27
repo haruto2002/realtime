@@ -4,11 +4,11 @@ import numpy as np
 from hydra.utils import instantiate
 from omegaconf import OmegaConf
 
-from pipeline.detector.deimv2 import DEIMv2Detector
-from pipeline.detector.p2pnet import P2PNetDetector
-from pipeline.detector.yolo26 import YOLODetector
-from pipeline.tracker.bytetrack import ByteTrackTracker
-from pipeline.tracker.point_bytetrack import PointByteTrackTracker
+from processor.detector.deimv2 import DEIMv2Detector
+from processor.detector.p2pnet import P2PNetDetector
+from processor.detector.yolo26 import YOLODetector
+from processor.tracker.bytetrack import ByteTrackTracker
+from processor.tracker.point_bytetrack import PointByteTrackTracker
 
 
 class Detector:

@@ -1,7 +1,0 @@
-_target_: pipeline.tracker.bytetrack.ByteTrackTracker
-
-track_thresh: 0.5
-track_buffer: 30
-match_thresh: 0.8
-mot20: False
-frame_rate: 10
